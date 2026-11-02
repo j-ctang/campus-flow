@@ -88,12 +88,10 @@ def run(bundle, detections, sigma_m=1.5, point='feet'):
     if not keys:
         raise ValueError('no frame key is present for every camera')
     m = bundle['meters_per_pixel']
-    total = np.zeros(base.shape[:2])
-    per_frame = {}
-    for k in keys:
-        pts = map_frame(cams, Hs, owner, {c['id']: detections[c['id']][k] for c in cams}, point)
-        per_frame[k] = pts
-        total += density(pts, base.shape[:2], sigma_m / m, covered)
+    per_frame = {k: map_frame(cams, Hs, owner, {c['id']: detections[c['id']][k] for c in cams}, point) for k in keys}
+    # Smoothing is linear, so smoothing all frames' points at once equals
+    # summing per-frame maps, at one blur instead of one per frame.
+    total = density(np.vstack(list(per_frame.values())), base.shape[:2], sigma_m / m, covered)
     mean_per_m2 = total / len(keys) / m ** 2
     return {'base': base, 'owner': owner, 'covered': covered, 'heat': mean_per_m2, 'frames': keys,
             'points': per_frame, 'homographies': Hs}
