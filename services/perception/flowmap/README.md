@@ -21,6 +21,7 @@ A bundle is a folder with one JSON file, one top-down map image and one video or
       "video": "camera1.mp4",
       "frame_size": [2704, 1520],
       "position": [88, 330],
+      "height_m": 8.3,
       "ground_points": [
         { "frame": [512, 1210], "map": [140, 371] },
         { "frame": [2190, 1180], "map": [251, 322] },
@@ -40,6 +41,7 @@ A bundle is a folder with one JSON file, one top-down map image and one video or
 | `cameras[].video` | Video file or frame folder for this camera. |
 | `cameras[].frame_size` | Frame width and height in pixels. |
 | `cameras[].position` | Where the camera stands on the map, in map pixels. Used for the camera icon. |
+| `cameras[].height_m` | Optional. Camera height above the ground in meters. Needed for head points (`--point head`). |
 | `cameras[].ground_points` | At least four pairs. Each pair is one spot on the ground, such as a crosswalk corner, marked in a camera frame (`frame`) and on the map (`map`). |
 | `cameras[].view_area` | Optional. Polygon in frame pixels of the ground this camera should cover. By default, the area inside the marked ground points is used. |
 
@@ -63,8 +65,10 @@ Frame keys must match across cameras: the same key means the same moment. Only k
 ## Run
 
 ```sh
-python services/perception/flowmap/heatmap.py BUNDLE.json DETECTIONS.json OUTPUT_DIR --sigma-m 1.5
+python services/perception/flowmap/heatmap.py BUNDLE.json DETECTIONS.json OUTPUT_DIR --sigma-m 1.5 --point head
 ```
+
+`--point feet` (default) uses the bottom of each person box. `--point head` uses a spot near the top of the box and needs `height_m` for every camera. Use head points for crowds, where feet are often hidden.
 
 ## Output
 
@@ -74,7 +78,7 @@ python services/perception/flowmap/heatmap.py BUNDLE.json DETECTIONS.json OUTPUT
 ## How it works
 
 1. The marked point pairs give each camera a homography, a fixed conversion from frame pixels to map pixels that holds for flat ground.
-2. The bottom center of each person box is taken as the person's feet and converted to the map.
+2. Each person box gives one image point. With feet, the bottom center is converted to the map. With heads, a point 8% of the box height below the top center is converted as if it lay on the ground. That spot is beyond the person, so it is pulled back toward the camera's map position by the ratio of person height (1.75 m) to camera height.
 3. Each map pixel belongs to one camera only, the first listed camera that covers it, so overlapping cameras never count a person twice.
 4. Every person adds one unit of mass, spread by a Gaussian of `--sigma-m` meters. The mean over frames gives people per square meter.
 
@@ -82,4 +86,5 @@ python services/perception/flowmap/heatmap.py BUNDLE.json DETECTIONS.json OUTPUT
 
 - Flat ground only.
 - Strong lens distortion, such as fisheye, bends straight lines, and a homography cannot follow that. Expect about 1 m of error with wide-angle cameras.
-- In dense crowds, feet are often hidden, so box bottoms can sit above the real foot position.
+- In dense crowds, feet are often hidden, so box bottoms can sit above the real foot position. Head points avoid this.
+- Head points assume everyone is 1.75 m tall and need the camera position on the map to be accurate.

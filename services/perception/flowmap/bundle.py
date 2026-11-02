@@ -24,6 +24,9 @@ def _points(value, where, minimum):
     return arr
 
 
+MIN_CAMERA_HEIGHT_M = 2.0  # head mode needs the camera above heads
+
+
 def meters_per_pixel(scale):
     a, b = _points(scale.get('points'), 'map.scale.points', 2)[:2]
     meters = float(scale.get('meters', 0))
@@ -58,6 +61,11 @@ def load(path):
                  'position': _points([cam.get('position')], f'{where}.position', 1)[0],
                  'frame_size': tuple(int(v) for v in cam.get('frame_size', (0, 0))),
                  'video': cam.get('video')}
+        if 'height_m' in cam:
+            height = float(cam['height_m'])
+            if height <= MIN_CAMERA_HEIGHT_M:
+                raise BundleError(f'{where}.height_m: camera must be higher than a person')
+            entry['height_m'] = height
         if 'view_area' in cam:
             entry['view_area'] = _points(cam['view_area'], f'{where}.view_area', 3)
         bundle['cameras'].append(entry)

@@ -36,3 +36,25 @@ def foot_points(boxes):
     """Bottom-center of each [x1, y1, x2, y2] person box."""
     b = np.asarray(boxes, float).reshape(-1, 4)
     return np.column_stack([(b[:, 0] + b[:, 2]) / 2, b[:, 3]])
+
+
+HEAD_OFFSET = 0.08  # head point sits this fraction of box height below the box top
+PERSON_HEIGHT_M = 1.75
+
+
+def head_points(boxes):
+    """Top-center of each [x1, y1, x2, y2] person box, moved down to the head.
+    Heads stay visible in crowds where feet are hidden."""
+    b = np.asarray(boxes, float).reshape(-1, 4)
+    return np.column_stack([(b[:, 0] + b[:, 2]) / 2, b[:, 1] + HEAD_OFFSET * (b[:, 3] - b[:, 1])])
+
+
+def head_to_ground(ground_hits, camera_position, camera_height_m, person_height_m=PERSON_HEIGHT_M):
+    """Standing spot of each person from where their head ray meets the ground.
+
+    The ray from the camera (height H, above map point C) through a head at
+    height h reaches the ground at G. The head, and so the person, is at
+    C + (G - C) * (1 - h / H). Exact for a pinhole camera over flat ground."""
+    g = np.asarray(ground_hits, float).reshape(-1, 2)
+    c = np.asarray(camera_position, float)
+    return c + (g - c) * (1 - person_height_m / camera_height_m)

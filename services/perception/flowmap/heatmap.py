@@ -3,7 +3,10 @@
 Detections JSON: {"<camera id>": {"<frame key>": [[x1, y1, x2, y2], ...]}}.
 Frame keys are shared across cameras (synchronized cameras). Only frames that
 every camera has are used, so each frame covers the same area.
-Usage: python heatmap.py <bundle.json> <detections.json> <output dir> [--sigma-m 1.5]
+Point modes: "feet" maps the box bottom center through the ground homography.
+"head" maps a point near the box top and corrects for head height; it needs
+each camera's height_m and is better in crowds where feet are hidden.
+Usage: python heatmap.py <bundle.json> <detections.json> <output dir> [--sigma-m 1.5] [--point head]
 """
 import os
 for _name in ('OMP_NUM_THREADS', 'OPENBLAS_NUM_THREADS', 'MKL_NUM_THREADS', 'NUMEXPR_NUM_THREADS', 'VECLIB_MAXIMUM_THREADS'):
@@ -34,12 +37,20 @@ def ownership(cameras, shape):
     return owner
 
 
-def map_frame(cameras, homographies, owner, frame_boxes):
+def to_map(cam, H, boxes, point='feet'):
+    """Person boxes in one camera frame -> standing spots in map pixels."""
+    if point == 'feet':
+        return transform.apply(H, transform.foot_points(boxes))
+    hits = transform.apply(H, transform.head_points(boxes))
+    return transform.head_to_ground(hits, cam['position'], cam['height_m'])
+
+
+def map_frame(cameras, homographies, owner, frame_boxes, point='feet'):
     """All people in one synchronized frame, in map pixels, each counted once."""
     out = []
     h, w = owner.shape
     for i, cam in enumerate(cameras):
-        pts = transform.apply(homographies[i], transform.foot_points(frame_boxes.get(cam['id'], [])))
+        pts = to_map(cam, homographies[i], frame_boxes.get(cam['id'], []), point)
         if not len(pts):
             continue
         x, y = np.round(pts[:, 0]).astype(int), np.round(pts[:, 1]).astype(int)
@@ -61,7 +72,11 @@ def density(points, shape, sigma_px, covered):
     return g * covered
 
 
-def run(bundle, detections, sigma_m=1.5):
+def run(bundle, detections, sigma_m=1.5, point='feet'):
+    if point not in ('feet', 'head'):
+        raise ValueError('point must be "feet" or "head"')
+    if point == 'head' and any('height_m' not in c for c in bundle['cameras']):
+        raise ValueError('head mode needs height_m for every camera')
     base = cv2.imread(str(bundle['map_image']))
     if base is None:
         raise FileNotFoundError(bundle['map_image'])
@@ -76,7 +91,7 @@ def run(bundle, detections, sigma_m=1.5):
     total = np.zeros(base.shape[:2])
     per_frame = {}
     for k in keys:
-        pts = map_frame(cams, Hs, owner, {c['id']: detections[c['id']][k] for c in cams})
+        pts = map_frame(cams, Hs, owner, {c['id']: detections[c['id']][k] for c in cams}, point)
         per_frame[k] = pts
         total += density(pts, base.shape[:2], sigma_m / m, covered)
     mean_per_m2 = total / len(keys) / m ** 2
@@ -128,10 +143,11 @@ def main():
     ap.add_argument('detections')
     ap.add_argument('out')
     ap.add_argument('--sigma-m', type=float, default=1.5)
+    ap.add_argument('--point', choices=('feet', 'head'), default='feet')
     ap.add_argument('--title', default='Crowd concentration')
     a = ap.parse_args()
     b = bundle_io.load(a.bundle)
-    result = run(b, json.loads(Path(a.detections).read_text()), a.sigma_m)
+    result = run(b, json.loads(Path(a.detections).read_text()), a.sigma_m, a.point)
     out = Path(a.out)
     out.mkdir(parents=True, exist_ok=True)
     render(b, result, out / 'heatmap.png', a.title)

@@ -9,6 +9,7 @@ Steps (all local, cached SAM boxes only, no network):
 3. Score against the official ground-plane labels (answer key), and against
    mapping the same boxes with the full official calibration.
 4. Repeat with simulated clicking error on the frame points.
+5. Repeat step 2 with head points instead of feet.
 
 Usage: python proof.py <citystreet data dir> <basemap dir> <sam batch dir> <output dir>
 """
@@ -176,6 +177,7 @@ def main():
         frame_pts = marks[c][0]
         cameras.append({'id': c, 'video': f'image_frames/{c}/', 'frame_size': [2704, 1520],
                         'position': (cams_full[c] - (x0, y0)).round(1).tolist(),
+                        'height_m': round(-float(center_mm(CAMERA_VIEW[c])[2]) / 1000, 2),  # world z points down
                         'ground_points': [{'frame': f.round(1).tolist(), 'map': m.round(2).tolist()}
                                           for f, m in zip(frame_pts, chain.ground_to_map(c, frame_pts))]})
     ten_m = 10 / chain.m_per_px
@@ -212,7 +214,10 @@ def main():
     calib = {}
     for k in result['frames']:
         calib[k] = np.vstack([inside(chain.ground_to_map(c, transform.foot_points(det[c][k])), i) for i, c in enumerate(marks)])
+    head = heatmap.run(b, det, 1.5, point='head')
+    heatmap.render(b, head, out / 'heatmap-sam-4points-head.png', 'CityStreet: SAM head points + 4 marked points per camera')
     summary = {'sam_4points': score(result['points'], answers, shape, covered, chain.m_per_px)[0],
+               'sam_4points_head': score(head['points'], answers, shape, covered, chain.m_per_px)[0],
                'sam_full_calibration': score(calib, answers, shape, covered, chain.m_per_px)[0]}
 
     # Mapping error of the 4-point homography vs official calibration, per camera, on ROI ground pixels.
