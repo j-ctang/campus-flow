@@ -9,7 +9,11 @@ back to the original frame and owns a band of original x: a person belongs
 to the crop whose band contains their foot, so overlapping crops never
 count a person twice.
 
-Usage: python sam_tracks.py <out.json> <stream.sse>:<x0>:<y0>:<scale>:<own_x0>:<own_x1> [...]
+A crop can be one stream file or a folder of chunk-<start>-<end>.sse files
+written by sam_video.py; chunk frame numbers are shifted by <start>. Track
+IDs restart in every chunk, so tracks are tagged per crop and chunk.
+
+Usage: python sam_tracks.py <camera> <out.json> <stream or chunk dir>:<x0>:<y0>:<scale>:<own_x0>:<own_x1> [...]
 Output: {"<camera>": {"<frame>": [[x1, y1, x2, y2], ...]}} plus a tracks file.
 """
 import json
@@ -50,10 +54,25 @@ def parse(text):
     return out
 
 
+def load(path):
+    """{frame: [...]} for one stream file or a chunk folder, plus a chunk tag per frame."""
+    path = Path(path)
+    if path.is_file():
+        return parse(stream_text(path)), {}
+    frames, tags = {}, {}
+    for f in sorted(path.glob('chunk-*.sse')):
+        start, end = map(int, re.match(r'chunk-(\d+)-(\d+)', f.stem).groups())
+        for k, v in parse(stream_text(f)).items():
+            if k + start < end:
+                frames[k + start] = v
+                tags[k + start] = start
+    return frames, tags
+
+
 def merge(crops):
     """crops: [(frames, x0, y0, scale, own_x0, own_x1, tag)] -> boxes and tracks."""
     boxes, tracks = {}, {}
-    for frames, x0, y0, s, lo, hi, tag in crops:
+    for frames, x0, y0, s, lo, hi, tag, chunk_of in crops:
         for f, items in frames.items():
             for tid, a, b, c, d in items:
                 box = [a / s + x0, b / s + y0, c / s + x0, d / s + y0]
@@ -61,22 +80,22 @@ def merge(crops):
                 if not lo <= foot < hi:
                     continue
                 boxes.setdefault(str(f), []).append([round(v, 1) for v in box])
-                tracks.setdefault(f'{tag}:{tid}', []).append([f, round(foot, 1), round(box[3], 1)])
+                tracks.setdefault(f'{tag}:{chunk_of.get(f, 0)}:{tid}', []).append([f, round(foot, 1), round(box[3], 1)])
     return boxes, tracks
 
 
 def main():
-    out = Path(sys.argv[1])
+    camera, out = sys.argv[1], Path(sys.argv[2])
     crops = []
-    for i, spec in enumerate(sys.argv[2:]):
+    for i, spec in enumerate(sys.argv[3:]):
         path, *nums = spec.split(':')
         x0, y0, s, lo, hi = map(float, nums)
-        crops.append((parse(stream_text(path)), x0, y0, s, lo, hi, f'crop{i}'))
+        crops.append((*load(path)[:1], x0, y0, s, lo, hi, f'crop{i}', load(path)[1]))
     boxes, tracks = merge(crops)
     n = max((max(f) for f, *_ in crops if f), default=-1) + 1
     for f in range(n):
         boxes.setdefault(str(f), [])  # frames with nobody detected
-    out.write_text(json.dumps({'cam10': boxes}))
+    out.write_text(json.dumps({camera: boxes}))
     out.with_name(out.stem + '-tracks.json').write_text(json.dumps(tracks))
     counts = [len(v) for v in boxes.values()]
     print(json.dumps({'frames': len(boxes), 'people_mean': sum(counts) / max(len(counts), 1),
