@@ -1,6 +1,6 @@
 # Flow map pipeline
 
-Turns camera footage of people into a crowd concentration heat map drawn on a top-down map of the area.
+Turns camera footage of people into a crowd concentration heat map and walking-flow arrows drawn on a top-down map of the area.
 
 > **Input format version 0.1. It may change.**
 
@@ -82,9 +82,35 @@ python services/perception/flowmap/heatmap.py BUNDLE.json DETECTIONS.json OUTPUT
 3. Each map pixel belongs to one camera only, the first listed camera that covers it, so overlapping cameras never count a person twice.
 4. Every person adds one unit of mass, spread by a Gaussian of `--sigma-m` meters. The mean over frames gives people per square meter.
 
+## Flow arrows
+
+`flow.py` draws where people walk, as arrows on the map.
+
+```sh
+python services/perception/flowmap/flow.py bundle.json tracks.json out/ --camera cam1 --fps 10 --cell-m 2
+```
+
+Tracks JSON: `{"<camera id>": {"<track id>": [[frame, x, y], ...]}}`, with `x, y` the foot point in frame pixels. A file with only track IDs at the top is read as one camera, named by `--camera`.
+
+1. Each foot point goes through the camera's homography to the map.
+2. A track that ends is joined to one that starts within 0.5 s, close by. Track IDs that restart (for example in every SAM chunk) then make one walk.
+3. Tracks are split at gaps over 0.5 s and at jumps faster than walking plus a few pixels of noise. Far from the camera one pixel spans more ground, so more noise is allowed there.
+4. Each piece is smoothed (median, then mean, over 0.5 s). Pieces shorter than 1.5 s or moving less than 1 m are dropped.
+5. The map is cut into cells (`--cell-m`, 2 m). A track adds one crossing to each cell it walks through, in one of 8 direction bins. Wandering inside a cell does not count.
+6. Each cell gets one arrow per main direction. Neighboring bins merge, so a stream between two bins gives one arrow. Opposite streams stay separate and never cancel.
+7. An arrow needs `--min-count` tracks (3) and at least 15% of the busiest arrow's rate. Arrows show only where at least half the cell is covered.
+
+Arrow width is people per minute going that way. Each arrow sits a little to the right of its cell center, so two-way paths show as two lanes. Speed is not shown.
+
+Output: `flow.png` (arrows on the map) and `flow.json` (minutes of footage, tracks kept and dropped, arrow count, top rate).
+
+`scout/demo_map.py --tracks` draws the same arrows over the heat layer.
+
 ## Limits
 
 - Flat ground only.
 - Strong lens distortion, such as fisheye, bends straight lines, and a homography cannot follow that. Expect about 1 m of error with wide-angle cameras.
 - In dense crowds, feet are often hidden, so box bottoms can sit above the real foot position. Head points avoid this.
 - Head points assume everyone is 1.75 m tall and need the camera position on the map to be accurate.
+- Flow from tracks far from the camera is noisy: one pixel there can be half a meter of ground.
+- Tracks are joined by position only. Two people who meet at a track restart can swap.

@@ -11,7 +11,7 @@ python services/perception/scout/cameras.py $D $T                 # cameras.json
 python services/perception/scout/make_bundle.py $D $T $D/videos/s2_cam_10_preview.mp4 $C
 python services/perception/scout/sam_video.py CROP.mp4 $C/sam/left100 --ledger LEDGER.json --budget 2.40
 python services/perception/scout/sam_tracks.py cam10 $C/detections.json $C/sam/left100:240:100:2:0:600 $C/sam/right100:560:100:2:600:852
-python services/perception/scout/demo_map.py $T $C/bundle.json $C/detections.json $C/demo
+python services/perception/scout/demo_map.py $T $C/bundle.json $C/detections.json $C/demo --tracks $C/detections-tracks.json
 ```
 
 ## Person detection with SAM video
@@ -23,7 +23,7 @@ python services/perception/scout/demo_map.py $T $C/bundle.json $C/detections.jso
 - **Long requests can fail mid-stream.** A 11,970-frame request failed after 2,322 frames. A failure now costs at most one chunk.
 - **Resumable.** Each finished chunk is cached. A rerun skips finished chunks.
 - **Spending.** One request at a time, a pause between requests, no retries, stop on the first failure. Every request goes into the usage ledger as soon as it ends. `--budget` refuses a run whose nominal cost is higher. Price: 0.20 USD per 1,000 frames, at least 50 frames per request.
-- Track IDs restart in every chunk. Flow arrows must join tracks across chunk boundaries.
+- Track IDs restart in every chunk. The flow step joins tracks across chunk boundaries.
 
 ## Limits
 
