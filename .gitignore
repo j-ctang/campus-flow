@@ -1,0 +1,30 @@
+# Credentials and local configuration
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+# JavaScript
+node_modules/
+.next/
+dist/
+# Data and generated artifacts
+data/
+datasets/
+artifacts/
+outputs/
+*.mp4
+*.mov
+*.tar.gz
+*.zip
+*.glb
+*.ply
+# Local editor / OS
+.DS_Store
+.idea/
+.vscode/
