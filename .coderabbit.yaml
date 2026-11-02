@@ -1,0 +1,27 @@
+# CodeRabbit: light, advisory reviews. Never blocks merges.
+# Schema: https://coderabbit.ai/integrations/schema.v2.json
+language: en-US
+reviews:
+  profile: chill                  # flag likely bugs only, skip nitpicks
+  request_changes_workflow: false # comment only, never "Request changes"
+  high_level_summary: true
+  poem: false
+  review_status: false
+  collapse_walkthrough: true
+  auto_review:
+    enabled: true
+    drafts: false
+    auto_incremental_review: false # one review per PR, not per push
+    base_branches:
+      - main
+  path_filters:
+    - "!data/**"
+    - "!datasets/**"
+    - "!outputs/**"
+    - "!artifacts/**"
+    - "!**/*.json"
+    - "!**/*.lock"
+    - "!**/package-lock.json"
+    - "!**/dist/**"
+chat:
+  auto_reply: true

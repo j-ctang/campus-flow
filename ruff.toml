@@ -1,0 +1,7 @@
+# Errors only: syntax errors (E9) and Pyflakes (F: unused imports,
+# undefined names, etc.). Style rules stay off for now.
+target-version = "py312"
+extend-exclude = ["data", "datasets", "outputs", "artifacts"]
+
+[lint]
+select = ["E9", "F"]
