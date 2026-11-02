@@ -16,6 +16,10 @@ Dataset reference: Qi Zhang and Antoni B. Chan. *[Wide-Area Crowd Counting via G
 
 To download CityStreet from its official source into the ignored `data/citystreet/` folder, run `scripts/get-citystreet.sh`. The script requires [uv](https://docs.astral.sh/uv/) and about 32 GB of free disk space. It skips the DukeMTMC and PETS2009 archives bundled in the same folder.
 
+## Input format
+
+The flow map pipeline takes a top-down map, the camera footage, and four or more hand-marked ground points per camera. It outputs a crowd heat map on that map. The input format is version 0.1 and may change. See [`services/perception/flowmap/README.md`](services/perception/flowmap/README.md).
+
 ## Contributing
 
 Open tasks you can pick up are in [`CONTRIBUTING.md`](CONTRIBUTING.md).
