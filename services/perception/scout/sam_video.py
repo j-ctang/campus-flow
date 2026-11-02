@@ -84,7 +84,7 @@ def segment(file_id, token, out):
     partial = out.with_suffix('.partial')
     final = None
     try:
-        with urllib.request.urlopen(req, timeout=900) as r, open(partial, 'wb') as f:
+        with urllib.request.urlopen(req, timeout=180) as r, open(partial, 'wb') as f:  # stall limit per read
             for line in r:
                 f.write(line)
                 if line.startswith(b'data: '):
