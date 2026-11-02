@@ -15,3 +15,7 @@ The [CityStreet dataset](https://visal.cs.cityu.edu.hk/research/citystreet/) fro
 Dataset reference: Qi Zhang and Antoni B. Chan. *[Wide-Area Crowd Counting via Ground-Plane Density Maps and Multi-View Fusion CNNs](https://arxiv.org/abs/2012.00946)* (CVPR 2019).
 
 To download CityStreet from its official source into the ignored `data/citystreet/` folder, run `scripts/get-citystreet.sh`. The script requires [uv](https://docs.astral.sh/uv/) and about 32 GB of free disk space. It skips the DukeMTMC and PETS2009 archives bundled in the same folder.
+
+## Contributing
+
+Open tasks you can pick up are in [`CONTRIBUTING.md`](CONTRIBUTING.md).
