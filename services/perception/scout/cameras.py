@@ -123,16 +123,56 @@ def draw(base, grid, cams, areas, highlight):
     if highlight in areas:
         tint = img[areas[highlight]].astype(np.float32)
         img[areas[highlight]] = np.uint8(tint * .45 + np.array(HIGHLIGHT) * .55)
-    placed = []
+    taken = [icon_box(grid, c, name == highlight) for name, c in cams.items()]  # no label on any icon
     for name, c in cams.items():
-        p = grid.to_px(np.array(c['center'][:2]))
-        row = sum(np.linalg.norm(p - q) < 40 for q in placed)  # stack labels of co-located cameras
-        placed.append(p)
-        draw_icon(img, grid, c, HIGHLIGHT if name == highlight else COLOR, name, name == highlight, row)
+        draw_icon(img, grid, c, HIGHLIGHT if name == highlight else COLOR, name, name == highlight, taken)
     return img
 
 
-def draw_icon(img, grid, cam, color, label, big=False, row=0):
+def _overlaps(a, b):
+    return a[0] < b[2] and b[0] < a[2] and a[1] < b[3] and b[1] < a[3]
+
+
+def place_label(center, r, size, shape, taken):
+    """Top-left text origin for a label next to an icon, avoiding boxes in taken.
+
+    Tries right, left, above and below the icon, then the same spots further
+    out, each moved inside the image, and picks the first box that overlaps no
+    earlier label or icon. Appends the chosen box to taken.
+    """
+    (cx, cy), (tw, th), pad = center, size, 6
+    spots = []
+    for k in range(6):
+        o = r + 4 + k * (th + pad)
+        spots += [(cx + o, cy - th // 2), (cx - o - tw, cy - th // 2), (cx - tw // 2, cy - o - th), (cx - tw // 2, cy + o)]
+    h, w = shape[:2]
+    spots = [(int(min(max(x, 3), w - tw - 4)), int(min(max(y, 3), h - th - 4))) for x, y in spots]  # keep inside
+    for x, y in spots:
+        box = (x - 3, y - 3, x + tw + 3, y + th + 3)
+        if not any(_overlaps(box, t) for t in taken):
+            break
+    else:
+        x, y = spots[0]
+        box = (x - 3, y - 3, x + tw + 3, y + th + 3)
+    taken.append(box)
+    return x, y + th  # putText takes the baseline
+
+
+def icon_box(grid, cam, big=False):
+    """Box around a camera icon, including its heading cone."""
+    p = grid.to_px(np.array(cam['center'][:2]))
+    d = np.array(cam['forward'][:2]) * [1, -1]
+    d = d / (np.linalg.norm(d) or 1)
+    r = 16 if big else 11
+    tip = p + d * r * 2.4
+    side = np.array([-d[1], d[0]]) * r * 1.1
+    pts = np.array([p - r, p + r, tip + side, tip - side])
+    return (*pts.min(0), *pts.max(0))
+
+
+def draw_icon(img, grid, cam, color, label, big=False, taken=None):
+    """Camera icon with its view direction. Pass one taken list for all
+    cameras on a map so labels do not overlap each other or other icons."""
     p = grid.to_px(np.array(cam['center'][:2]))
     d = np.array(cam['forward'][:2]) * [1, -1]  # map y points down
     d = d / (np.linalg.norm(d) or 1)
@@ -145,11 +185,10 @@ def draw_icon(img, grid, cam, color, label, big=False, row=0):
     cv2.circle(img, c, r, (255, 255, 255), -1, cv2.LINE_AA)
     cv2.circle(img, c, r, color, 4 if big else 3, cv2.LINE_AA)
     scale = .8 if big else .55
-    (tw, th_), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, scale, 2)
-    x = c[0] + r + 4 if c[0] + r + 4 + tw < img.shape[1] else c[0] - r - 4 - tw
-    y = c[1] - r + row * (th_ + 10)
+    size, _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, scale, 2)
+    org = place_label(c, r, size, img.shape, [] if taken is None else taken)
     for col, th in (((0, 0, 0), 5), ((255, 255, 255), 2 if big else 1)):
-        cv2.putText(img, label, (x, y), cv2.FONT_HERSHEY_SIMPLEX, scale, col, th, cv2.LINE_AA)
+        cv2.putText(img, label, org, cv2.FONT_HERSHEY_SIMPLEX, scale, col, th, cv2.LINE_AA)
 
 
 def main():
