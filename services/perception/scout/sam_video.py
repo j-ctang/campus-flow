@@ -24,8 +24,10 @@ Usage: python sam_video.py <video.mp4> <output dir> --ledger <usage-ledger.json>
 import argparse
 import http.client
 import json
+import socket
 import subprocess
 import sys
+import threading
 import time
 import urllib.error
 import urllib.request
@@ -35,6 +37,8 @@ from pathlib import Path
 API = 'https://api.meta.ai/v1'
 ROOT = Path(__file__).resolve().parents[3]
 STALL_S = 60  # a stream read that waits longer counts as a network error
+DEADLINE_S = 300  # whole request; a normal 100-frame chunk takes about 10 s
+UPLOAD_TIMEOUT_S = 120
 USD_PER_FRAME = 0.20 / 1000  # official price, checked November 2026
 MIN_FRAMES = 50
 
@@ -80,7 +84,7 @@ def upload(path, token):
     body = head + path.read_bytes() + f'\r\n--{boundary}--\r\n'.encode()
     req = urllib.request.Request(f'{API}/files', body, {'Authorization': f'Bearer {token}',
                                                         'Content-Type': f'multipart/form-data; boundary={boundary}'})
-    with urllib.request.urlopen(req, timeout=900) as r:
+    with urllib.request.urlopen(req, timeout=UPLOAD_TIMEOUT_S) as r:
         info = json.load(r)
     if not info.get('id'):
         sys.exit(f'upload failed: {info}')
@@ -96,8 +100,21 @@ def segment(file_id, token, out):
                                  {'Authorization': f'Bearer {token}', 'Content-Type': 'application/json'})
     partial = out.with_suffix('.partial')
     final = None
+    expired = threading.Event()
+    timer = None
     try:
         with urllib.request.urlopen(req, timeout=STALL_S) as r, open(partial, 'wb') as f:
+            # The read timeout misses some hung connections (seen: no data for
+            # 18 min), so a wall-clock deadline closes the socket.
+            def stop():
+                expired.set()
+                try:
+                    r.fp.raw._sock.shutdown(socket.SHUT_RDWR)
+                except (AttributeError, OSError):
+                    r.close()
+            timer = threading.Timer(DEADLINE_S, stop)
+            timer.daemon = True
+            timer.start()
             for line in r:
                 f.write(line)
                 if line.startswith(b'data: '):
@@ -108,8 +125,16 @@ def segment(file_id, token, out):
                     if ev.get('type') in ('response.completed', 'response.failed', 'response.incomplete', 'error'):
                         final = ev
     except Exception as e:
-        kind = 'network_error' if is_network_error(e) else 'client_error'
-        final = {'type': kind, 'error': {'message': str(e)}}
+        kind = 'network_error' if expired.is_set() or is_network_error(e) else 'client_error'
+        msg = f'no answer within {DEADLINE_S} s' if expired.is_set() else str(e)
+        final = {'type': kind, 'error': {'message': msg}}
+    finally:
+        if timer:
+            timer.cancel()
+    if expired.is_set() and (final or {}).get('type') not in ('network_error',):
+        status_now = (final or {}).get('response', {}).get('status')
+        if status_now != 'completed':
+            final = {'type': 'network_error', 'error': {'message': f'no answer within {DEADLINE_S} s'}}
     status = (final or {}).get('response', {}).get('status')
     if status == 'completed':
         partial.replace(out)
