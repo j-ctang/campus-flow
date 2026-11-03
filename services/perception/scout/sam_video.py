@@ -19,7 +19,7 @@ cut into short chunks (default 100 frames, 10 s at 10 fps), one request each:
 The API key is read from MODEL_API_KEY in <repo>/.env and never printed.
 
 Usage: python sam_video.py <video.mp4> <output dir> --ledger <usage-ledger.json>
-       [--chunk 100] [--pause 10] [--budget 5.0] [--start N --end M]
+       [--chunk 100] [--pause 3] [--budget 5.0] [--start N --end M]
 """
 import argparse
 import http.client
@@ -161,7 +161,7 @@ def main():
     ap.add_argument('out')
     ap.add_argument('--ledger', required=True)
     ap.add_argument('--chunk', type=int, default=100)
-    ap.add_argument('--pause', type=float, default=10)
+    ap.add_argument('--pause', type=float, default=3)
     ap.add_argument('--budget', type=float, default=5.0)
     ap.add_argument('--start', type=int, default=0, help='first frame to cover')
     ap.add_argument('--end', type=int, help='frame after the last to cover')
