@@ -32,6 +32,46 @@ To download CityStreet from its official source into the ignored `data/citystree
 
 The flow map pipeline takes a top-down map, the camera footage, and four or more hand-marked ground points per camera. It outputs a crowd heat map on that map. The input format is version 0.1 and may change. See [`services/perception/flowmap/README.md`](services/perception/flowmap/README.md).
 
+## Temporary pipeline
+
+This is the current working pipeline. It will change.
+
+```mermaid
+flowchart LR
+    A[Camera footage] --> B[Crop and upscale<br/>2 crops if over 16 people]
+    B --> C[Cut 100-frame chunks]
+    C --> D[Meta SAM video<br/>sam_video.py]
+    D --> E[Person tracks<br/>sam_tracks.py]
+    F[Top-down map<br/>topdown.py] --> G[Bundle: map + 4 ground points<br/>make_bundle.py]
+    E --> H[Project feet or heads to map]
+    G --> H
+    H --> I[Heat map<br/>where people are]
+    H --> J[Flow arrows<br/>where people go<br/>flow.py]
+    I --> K[Final map<br/>demo_map.py]
+    J --> K
+```
+
+- Final output: flow arrows over the heat map.
+- Heat shows where people gather. Arrows show which way they walk.
+
+- Each step caches its output. Reruns skip finished chunks.
+- Chunks are 100 frames. SAM picks people early, then stops finding new ones.
+- SAM tracks at most 16 people per frame. Busy scenes use 2 crops.
+- `--budget` caps spend. Network errors resume. API errors stop the run.
+- Scripts live in `services/perception/scout/` and `services/perception/flowmap/`.
+
+```mermaid
+flowchart LR
+    S[SAM call<br/>~10 s] --> T[Pause<br/>10 s]
+    T --> U[Cut next chunk<br/>slower each chunk]
+    U --> S
+```
+
+- One chunk takes about 10 s of SAM time.
+- A full run is slow for two reasons: the 10 s pause and `cut()`.
+- `cut()` decodes from frame 0 every time. Late chunks take longest.
+- Fix planned: cut all chunks in one ffmpeg pass.
+
 ## Contributing
 
 Open tasks you can pick up are in [`CONTRIBUTING.md`](CONTRIBUTING.md).
