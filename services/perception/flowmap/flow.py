@@ -72,8 +72,10 @@ def feet(t, fps):
     if t.shape[1] < 4 or len(t) < 3:
         return xy
     h = t[:, 2] - t[:, 3]
-    near = np.abs(t[:, None, 0] - t[None, :, 0]) <= HEIGHT_WINDOW_S * fps
-    usual = np.array([np.percentile(h[k], 80) for k in near])
+    reach = HEIGHT_WINDOW_S * fps  # rows are sorted by frame
+    lo = np.searchsorted(t[:, 0], t[:, 0] - reach, 'left')
+    hi = np.searchsorted(t[:, 0], t[:, 0] + reach, 'right')
+    usual = np.array([np.percentile(h[i:j], 80) for i, j in zip(lo, hi)])
     hidden = (h < HIDDEN_FEET * usual) & (t[:, 3] > 1)
     xy[hidden, 1] = t[hidden, 3] + usual[hidden]
     return xy
