@@ -76,6 +76,10 @@ flowchart LR
 - `cut()` decodes from frame 0 every time. Late chunks take longest.
 - Fix planned: cut all chunks in one ffmpeg pass.
 
+## How the app works
+
+Inputs, outputs, processing time and cost, and what the viewer must show: [`docs/app.md`](docs/app.md).
+
 ## Contributing
 
 Open tasks you can pick up are in [`CONTRIBUTING.md`](CONTRIBUTING.md).
