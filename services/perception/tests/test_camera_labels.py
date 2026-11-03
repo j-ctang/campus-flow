@@ -1,5 +1,7 @@
 import importlib.util
 import unittest
+
+import numpy as np
 from pathlib import Path
 
 # Load by path under its own name: citystreet/ also has a cameras module.
@@ -29,6 +31,13 @@ class LabelPlacementTests(unittest.TestCase):
         self.assertGreaterEqual(box[0] + 3, 0)
         self.assertLess(box[2] - 3, 400)
         self.assertGreaterEqual(box[1] + 3, 0)
+
+    def test_icon_box_includes_heading_cone(self):
+        class Grid:
+            def to_px(self, xy):
+                return np.asarray(xy, float)
+        box = cameras.icon_box(Grid(), {'center': [100, 100, 0], 'forward': [1, 0, 0]})
+        self.assertGreaterEqual(box[2], 100 + 11 * 2.4)
 
 
 if __name__ == '__main__':

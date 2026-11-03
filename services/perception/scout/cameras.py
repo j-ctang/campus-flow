@@ -123,11 +123,7 @@ def draw(base, grid, cams, areas, highlight):
     if highlight in areas:
         tint = img[areas[highlight]].astype(np.float32)
         img[areas[highlight]] = np.uint8(tint * .45 + np.array(HIGHLIGHT) * .55)
-    taken = []  # reserve every icon first, so no label lands on a neighbouring camera
-    for name, c in cams.items():
-        x, y = grid.to_px(np.array(c['center'][:2]))
-        r = 16 if name == highlight else 11
-        taken.append((x - r, y - r, x + r, y + r))
+    taken = [icon_box(grid, c, name == highlight) for name, c in cams.items()]  # no label on any icon
     for name, c in cams.items():
         draw_icon(img, grid, c, HIGHLIGHT if name == highlight else COLOR, name, name == highlight, taken)
     return img
@@ -160,6 +156,18 @@ def place_label(center, r, size, shape, taken):
         box = (x - 3, y - 3, x + tw + 3, y + th + 3)
     taken.append(box)
     return x, y + th  # putText takes the baseline
+
+
+def icon_box(grid, cam, big=False):
+    """Box around a camera icon, including its heading cone."""
+    p = grid.to_px(np.array(cam['center'][:2]))
+    d = np.array(cam['forward'][:2]) * [1, -1]
+    d = d / (np.linalg.norm(d) or 1)
+    r = 16 if big else 11
+    tip = p + d * r * 2.4
+    side = np.array([-d[1], d[0]]) * r * 1.1
+    pts = np.array([p - r, p + r, tip + side, tip - side])
+    return (*pts.min(0), *pts.max(0))
 
 
 def draw_icon(img, grid, cam, color, label, big=False, taken=None):
