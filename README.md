@@ -2,6 +2,18 @@
 
 Campus Flow studies how people move around EPFL’s campus in Switzerland. It maps observed pedestrian movement and summarizes flows between campus areas to help inform future transit planning.
 
+## How it works
+
+![Pipeline: camera video, people found by SAM, placed on a top-down map, crowd heat map compared with official labels](docs/images/pipeline.jpg)
+
+1. **Camera video.** For each camera, a person marks four spots on flat ground once, such as crosswalk corners.
+2. **Find people.** The hosted SAM 3.1 model finds every person in each frame. Each person gives one point: the feet for low cameras, the head for high cameras in crowds. SAM follows at most 16 people per video frame, so a busy view is split into overlapping crops, and each person is counted in one crop only.
+3. **Place on the map.** The same four spots marked on a top-down map fix a conversion from camera pixels to map pixels. Every person is placed on the map with it.
+4. **Crowd heat map.** People from all frames and cameras add up to people per square meter. Ground no camera sees stays gray. Tracks of people over time give flow arrows (not shown here).
+5. **Check.** On CityStreet, the result matches the official ground labels: map correlation 0.81, and 72% of people placed within 2 m.
+
+The figure uses CityStreet, because the SCOUT terms do not allow sharing SCOUT images. The same pipeline runs on the SCOUT campus cameras. `services/perception/citystreet/readme_figure.py` rebuilds the figure.
+
 ## Data credits
 
 Campus Flow uses the [SCOUT dataset](https://scout.epfl.ch/) from EPFL’s Computer Vision Laboratory (CVLAB), including video, camera calibration, and scene geometry.
