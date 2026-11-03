@@ -1,6 +1,6 @@
 # Campus Flow
 
-Campus Flow studies how people move around EPFL’s campus in Switzerland. It maps observed pedestrian movement and summarizes flows between campus areas to help inform future transit planning.
+Campus Flow maps how people walk through a place, using ordinary camera footage. It turns video into crowd heat maps and flow arrows on a top-down map, to help plan transit and crowd safety. We build and test it on EPFL’s SCOUT campus data. SCOUT images stay private, so public figures and demos use the CityStreet dataset.
 
 ## How it works
 
