@@ -22,7 +22,8 @@ python services/perception/scout/demo_map.py $T $C/bundle.json $C/detections.jso
 - **At most 16 people per frame.** Split a busy frame into overlapping crops, one request each. `sam_tracks.py` gives each person to the crop whose band holds their feet, so no one is counted twice.
 - **Long requests can fail mid-stream.** A 11,970-frame request failed after 2,322 frames. A failure now costs at most one chunk.
 - **Resumable.** Each finished chunk is cached. A rerun skips finished chunks.
-- **Spending.** One request at a time, a pause between requests, no retries, stop on the first failure. Every request goes into the usage ledger as soon as it ends. `--budget` refuses a run whose nominal cost is higher. Price: 0.20 USD per 1,000 frames, at least 50 frames per request.
+- **Network errors resume, API errors stop.** A timeout, reset or broken pipe waits 60 s and retries the same chunk, at most 5 times per run. A stream that sends nothing for 60 s counts as a timeout. Any error answer from the API stops the run at once.
+- **Spending.** One request at a time, a pause between requests. Every request goes into the usage ledger as soon as it ends. `--budget` refuses a run whose nominal cost is higher. Price: 0.20 USD per 1,000 frames, at least 50 frames per request.
 - Track IDs restart in every chunk. The flow step joins tracks across chunk boundaries.
 
 ## Limits

@@ -9,7 +9,10 @@ cut into short chunks (default 100 frames, 10 s at 10 fps), one request each:
 - Chunks run one at a time, with --pause seconds between requests.
 - Each finished chunk is cached as chunk-<start>-<end>.sse; a rerun skips
   finished chunks, so a failure costs at most one chunk.
-- No retries. The first failure stops the run; rerun to resume.
+- Network errors (timeouts, resets, broken pipes) wait --network-wait
+  seconds and retry the same chunk, at most --network-resumes times per run.
+  Any API error (an HTTP error status or a failed response) stops the run at
+  once; rerun to resume.
 - Every request is appended to the usage ledger (--ledger) right after it ends.
 - --budget caps the nominal cost of new requests in this run.
 
@@ -19,16 +22,19 @@ Usage: python sam_video.py <video.mp4> <output dir> --ledger <usage-ledger.json>
        [--chunk 100] [--pause 10] [--budget 5.0] [--start N --end M]
 """
 import argparse
+import http.client
 import json
 import subprocess
 import sys
 import time
+import urllib.error
 import urllib.request
 import uuid
 from pathlib import Path
 
 API = 'https://api.meta.ai/v1'
 ROOT = Path(__file__).resolve().parents[3]
+STALL_S = 60  # a stream read that waits longer counts as a network error
 USD_PER_FRAME = 0.20 / 1000  # official price, checked November 2026
 MIN_FRAMES = 50
 
@@ -59,6 +65,13 @@ def cut(video, start, end, path):
     tmp.replace(path)
 
 
+def is_network_error(e):
+    """True for connection trouble, False for answers from the API."""
+    if isinstance(e, urllib.error.HTTPError):
+        return False
+    return isinstance(e, (urllib.error.URLError, TimeoutError, ConnectionError, http.client.HTTPException, OSError))
+
+
 def upload(path, token):
     boundary = uuid.uuid4().hex
     head = (f'--{boundary}\r\nContent-Disposition: form-data; name="purpose"\r\n\r\nuser_data\r\n'
@@ -84,7 +97,7 @@ def segment(file_id, token, out):
     partial = out.with_suffix('.partial')
     final = None
     try:
-        with urllib.request.urlopen(req, timeout=180) as r, open(partial, 'wb') as f:  # stall limit per read
+        with urllib.request.urlopen(req, timeout=STALL_S) as r, open(partial, 'wb') as f:
             for line in r:
                 f.write(line)
                 if line.startswith(b'data: '):
@@ -94,8 +107,9 @@ def segment(file_id, token, out):
                         continue
                     if ev.get('type') in ('response.completed', 'response.failed', 'response.incomplete', 'error'):
                         final = ev
-    except Exception as e:  # network or HTTP error: report, never retry
-        final = {'type': 'client_error', 'error': {'message': str(e)}}
+    except Exception as e:
+        kind = 'network_error' if is_network_error(e) else 'client_error'
+        final = {'type': kind, 'error': {'message': str(e)}}
     status = (final or {}).get('response', {}).get('status')
     if status == 'completed':
         partial.replace(out)
@@ -126,6 +140,8 @@ def main():
     ap.add_argument('--budget', type=float, default=5.0)
     ap.add_argument('--start', type=int, default=0, help='first frame to cover')
     ap.add_argument('--end', type=int, help='frame after the last to cover')
+    ap.add_argument('--network-resumes', type=int, default=5, help='network errors to wait out per run')
+    ap.add_argument('--network-wait', type=float, default=60)
     a = ap.parse_args()
     video, out, ledger = Path(a.video), Path(a.out), Path(a.ledger)
     out.mkdir(parents=True, exist_ok=True)
@@ -136,6 +152,7 @@ def main():
     if cost > a.budget + 1e-9:
         sys.exit(f'nominal ${cost:.2f} over budget ${a.budget:.2f}')
     token = key() if todo else None
+    resumes = 0
     for i, (s, e) in enumerate(todo):
         if i:
             time.sleep(a.pause)
@@ -143,20 +160,34 @@ def main():
         clip = out / f'{name}.mp4'
         if not clip.exists():
             cut(video, s, e, clip)
-        t0 = time.time()
-        file_id = upload(clip, token)
-        final = segment(file_id, token, out / f'{name}.sse')
-        resp = (final or {}).get('response', {})
-        usage = resp.get('usage') or {}
-        billed = usage.get('video_frames_processed')
-        ok = resp.get('status') == 'completed'
-        log(ledger, {'model': 'sam-3.1', 'kind': 'video', 'frames_billed': billed,
-                     'nominal_cost': round(billed * USD_PER_FRAME, 4) if billed is not None else None,
-                     'worst_case_cost': round((e - s) * USD_PER_FRAME, 4),
-                     'status': 'completed' if ok else f'failed: {(final or {}).get("type")} {resp.get("error") or (final or {}).get("error")}',
-                     'artifact': f'{out}/{name}.sse (frames {s}-{e - 1} of {video.name}, {file_id})'})
-        print(f'{name}: {"ok" if ok else "FAILED"} billed={billed} {time.time() - t0:.0f}s', flush=True)
-        if not ok:
+        while True:
+            t0 = time.time()
+            try:
+                file_id = upload(clip, token)
+            except Exception as err:
+                if not is_network_error(err):
+                    raise
+                file_id, final = None, {'type': 'network_error', 'error': {'message': f'upload: {err}'}}
+            else:
+                final = segment(file_id, token, out / f'{name}.sse')
+            resp = (final or {}).get('response', {})
+            billed = (resp.get('usage') or {}).get('video_frames_processed')
+            ok = resp.get('status') == 'completed'
+            if file_id:  # a request was sent: log it
+                log(ledger, {'model': 'sam-3.1', 'kind': 'video', 'frames_billed': billed,
+                             'nominal_cost': round(billed * USD_PER_FRAME, 4) if billed is not None else None,
+                             'worst_case_cost': round((e - s) * USD_PER_FRAME, 4),
+                             'status': 'completed' if ok else f'failed: {(final or {}).get("type")} {resp.get("error") or (final or {}).get("error")}',
+                             'artifact': f'{out}/{name}.sse (frames {s}-{e - 1} of {video.name}, {file_id})'})
+            print(f'{name}: {"ok" if ok else "FAILED"} billed={billed} {time.time() - t0:.0f}s', flush=True)
+            if ok:
+                break
+            if (final or {}).get('type') == 'network_error' and resumes < a.network_resumes:
+                resumes += 1
+                print(f'network error {resumes}/{a.network_resumes}, retrying {name} in {a.network_wait:.0f}s: '
+                      f'{final["error"]["message"]}', flush=True)
+                time.sleep(a.network_wait)
+                continue
             sys.exit(1)
         clip.unlink()  # the source video can always cut it again
     print('all chunks done', flush=True)

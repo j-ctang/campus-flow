@@ -10,7 +10,7 @@ stationary.
 Flow is counted on a coarse grid. Every track adds one crossing to each cell it
 walks through, in one of `bins` direction bins, so opposite streams stay
 separate. Rate = crossings per minute of footage. Speed is not used.
-Usage: python flow.py <bundle.json> <tracks.json> <output dir> [--camera cam10] [--fps 10] [--cell-m 2]
+Usage: python flow.py <bundle.json> <tracks.json> <output dir> [--camera cam10] [--fps 10] [--cell-m 4] [--min-count 8]
 """
 import os
 for _name in ('OMP_NUM_THREADS', 'OPENBLAS_NUM_THREADS', 'MKL_NUM_THREADS', 'NUMEXPR_NUM_THREADS', 'VECLIB_MAXIMUM_THREADS'):
@@ -252,8 +252,8 @@ def main():
     ap.add_argument('out')
     ap.add_argument('--camera')
     ap.add_argument('--fps', type=float, default=10.0)
-    ap.add_argument('--cell-m', type=float, default=2.0)
-    ap.add_argument('--min-count', type=int, default=3)
+    ap.add_argument('--cell-m', type=float, default=4.0)
+    ap.add_argument('--min-count', type=int, default=8)
     a = ap.parse_args()
     b = bundle_io.load(a.bundle)
     base = cv2.imread(str(b['map_image']))
