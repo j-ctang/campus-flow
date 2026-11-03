@@ -42,6 +42,7 @@ CAMERA_VIEW = {v['camera']: k for k, v in VIEWS.items()}
 LABEL_OFFSET = {'camera1': (292.27893186796325, 416.0818686204356),
                 'camera3': (270.71468805313606, 429.47065420753427),
                 'camera4': (284.6153152748718, 391.0081121591906)}
+FIRST_TEST_FRAME = 1236
 MARGIN = 40
 CLICK_NOISE_PX = (0, 5, 15, 30)  # frame pixels at 2704x1520
 TRIALS = 10
@@ -188,6 +189,7 @@ def main():
 
     # 2. Detections from cached SAM tiles, synchronized test frames only.
     frames = sorted({int(re.search(r'-(\d{4})-', p).group(1)) for p in glob.glob(str(batch / '*.json'))})
+    frames = [f for f in frames if f >= FIRST_TEST_FRAME]  # offsets were fit on earlier frames
     det = {c: {} for c in marks}
     for f in frames:
         per = {c: sam_boxes(batch, c, f) for c in marks}
