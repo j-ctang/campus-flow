@@ -131,6 +131,18 @@ class DeadlineTests(unittest.TestCase):
         self.assertIn('No space left', final['error']['message'])
         self.assertFalse(keep['saved'])
 
+    def test_cache_open_error_is_reported(self):
+        def denied(path, mode='r'):
+            raise PermissionError(13, 'Permission denied')
+
+        sam_video.open = denied
+        try:
+            final, _ = self.run_against(CompletesThenHangs)
+        finally:
+            del sam_video.open
+        self.assertEqual(final['type'], 'client_error')
+        self.assertIn('Permission denied', final['error']['message'])
+
     def test_stream_that_never_ends_is_cut_by_the_deadline(self):
         final, took = self.run_against(Trickle)
         self.assertLess(took, 2)

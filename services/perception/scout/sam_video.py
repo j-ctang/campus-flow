@@ -98,7 +98,11 @@ def _stream(req, partial, held, result):
     Errors writing or closing the cache file always count, so an incomplete
     file is never kept.
     """
-    f = open(partial, 'wb')
+    try:
+        f = open(partial, 'wb')
+    except OSError as e:
+        result['cache_error'] = e
+        return
     try:
         try:
             with urllib.request.urlopen(req, timeout=STALL_S) as r:
