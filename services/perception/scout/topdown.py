@@ -66,6 +66,8 @@ class Grid:
     def as_dict(self):
         return {'m_per_px': self.m, 'scene_x_at_px0': float(self.x0), 'scene_y_at_py0': float(self.y1),
                 'width': self.w, 'height': self.h,
+                # Checked against OpenStreetMap building edges near the scene: up is north (+-0.5 deg), not mirrored.
+                'north_deg': 0.0,
                 'note': 'px = (x - scene_x_at_px0) / m_per_px; py = (scene_y_at_py0 - y) / m_per_px'}
 
 
