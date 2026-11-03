@@ -14,7 +14,8 @@ written by sam_video.py; chunk frame numbers are shifted by <start>. Track
 IDs restart in every chunk, so tracks are tagged per crop and chunk.
 
 Usage: python sam_tracks.py <camera> <out.json> <stream or chunk dir>:<x0>:<y0>:<scale>:<own_x0>:<own_x1> [...]
-Output: {"<camera>": {"<frame>": [[x1, y1, x2, y2], ...]}} plus a tracks file.
+Output: {"<camera>": {"<frame>": [[x1, y1, x2, y2], ...]}} plus a tracks file
+{"<track>": [[frame, foot x, foot y, top y], ...]}.
 """
 import json
 import re
@@ -80,7 +81,7 @@ def merge(crops):
                 if not lo <= foot < hi:
                     continue
                 boxes.setdefault(str(f), []).append([round(v, 1) for v in box])
-                tracks.setdefault(f'{tag}:{chunk_of.get(f, 0)}:{tid}', []).append([f, round(foot, 1), round(box[3], 1)])
+                tracks.setdefault(f'{tag}:{chunk_of.get(f, 0)}:{tid}', []).append([f, round(foot, 1), round(box[3], 1), round(box[1], 1)])
     return boxes, tracks
 
 

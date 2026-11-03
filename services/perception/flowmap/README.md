@@ -90,17 +90,18 @@ python services/perception/flowmap/heatmap.py BUNDLE.json DETECTIONS.json OUTPUT
 python services/perception/flowmap/flow.py bundle.json tracks.json out/ --camera cam1 --fps 10 --cell-m 4
 ```
 
-Tracks JSON: `{"<camera id>": {"<track id>": [[frame, x, y], ...]}}`, with `x, y` the foot point in frame pixels. A file with only track IDs at the top is read as one camera, named by `--camera`.
+Tracks JSON: `{"<camera id>": {"<track id>": [[frame, x, y, top], ...]}}`, with `x, y` the foot point (box bottom center) and `top` the box top, in frame pixels. `top` is optional. A file with only track IDs at the top is read as one camera, named by `--camera`.
 
-1. Each foot point goes through the camera's homography to the map.
-2. A track that ends is joined to one that starts within 0.5 s, close by. Track IDs that restart (for example in every SAM chunk) then make one walk.
-3. Tracks are split at gaps over 0.5 s and at jumps faster than walking plus a few pixels of noise. Far from the camera one pixel spans more ground, so more noise is allowed there.
-4. Each piece is smoothed (median, then mean, over 0.5 s). Pieces shorter than 1.5 s or moving less than 1 m are dropped.
-5. The map is cut into cells (`--cell-m`, default 4 m). A track adds one crossing to each cell it walks through, in one of 8 direction bins. Wandering inside a cell does not count.
-6. Each cell gets one arrow per main direction. Neighboring bins merge, so a stream between two bins gives one arrow. Opposite streams stay separate and never cancel.
-7. An arrow needs `--min-count` tracks (default 8) and at least 15% of the busiest arrow's rate. Arrows show only where at least half the cell is covered.
+1. Hidden feet are fixed. When legs are hidden behind someone, the box bottom jumps up and the foot lands meters away on the map. A box shorter than 85% of its usual height (over 1 s around it) gets its foot at top plus usual height. This needs `top`.
+2. Each foot point goes through the camera's homography to the map.
+3. A track that ends is joined to one that starts within 1 s, close by. Track IDs that restart (for example in every SAM chunk) then make one walk.
+4. Tracks are split at gaps over 1 s and at jumps faster than walking plus a few pixels of noise. Far from the camera one pixel spans more ground, so more noise is allowed there.
+5. Each piece is smoothed (median, then mean, over 0.5 s). Pieces shorter than 1.5 s or moving less than 1 m are dropped.
+6. The map is cut into cells (`--cell-m`, default 4 m). A track adds one crossing to each cell it walks through, in one of 8 direction bins. Wandering inside a cell does not count.
+7. Each cell gets one arrow per main direction. Neighboring bins merge, so a stream between two bins gives one arrow. Opposite streams stay separate and never cancel.
+8. An arrow needs 20% of the tracks of a busy cell (the 95th percentile of cells with flow), at least 3, so the threshold grows with the crowd. `--min-count` sets a fixed number instead. An arrow also needs at least 15% of the busiest arrow's rate. Arrows show only where at least half the cell is covered.
 
-On SCOUT camera 10 (20 minutes), 2 m cells with 3 tracks drew 280 arrows and hid the lanes. 4 m cells with 8 tracks draw 83 arrows and keep the main lanes. For short footage, lower `--min-count`.
+On SCOUT camera 10 (20 minutes), 2 m cells with 3 tracks drew 280 arrows and hid the lanes; 4 m cells keep the main lanes. On 8 SCOUT cameras the scaled threshold is 27 tracks and draws 117 arrows; the answer key, with 2.5 times as many people, gets 63 and 110 arrows. A fixed 8 drew 166 arrows, mostly minor streams.
 
 Arrow width is people per minute going that way. Each arrow sits a little to the right of its cell center, so two-way paths show as two lanes. Speed is not shown.
 

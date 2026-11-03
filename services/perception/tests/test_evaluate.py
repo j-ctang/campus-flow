@@ -47,17 +47,23 @@ class EvaluateTests(unittest.TestCase):
         self.assertEqual((k['agrees'], k['weaker_real_flow'], k['opposite'], k['no_flow_in_answer_key']), (1, 1, 1, 1))
         self.assertEqual(r['truth_arrows_with_our_arrow_nearby'], 1.0)
 
-    def test_best_lag_finds_offset(self):
-        rng = np.random.default_rng(0)
-        base = rng.integers(0, 9, 300)
-        truth = {f: np.zeros((base[f], 2)) for f in range(300)}
-        ours = {f: np.zeros((base[f - 3] if f >= 3 else 0, 2)) for f in range(300)}
-        self.assertEqual(evaluate.best_lag(ours, truth, list(range(300))), 3)
+    def _lag_case(self, shift):
+        """One walker at 1.2 m/s (12 px/frame at 0.1 m/px, identity camera);
+        our track sits `shift` frames behind the answer key."""
+        corners = [[0, 0], [400, 0], [400, 400], [0, 400]]
+        b = {'meters_per_pixel': 0.1, 'cameras': [{'id': 'a', 'frame_points': corners, 'map_points': corners}]}
+        tracks = {'a': {'1': [[f, 20 + 1.2 * (f - shift), 200] for f in range(shift, 200)]}}
+        truth = {f: {7: np.array([20 + 1.2 * f, 200.0])} for f in range(200)}
+        return evaluate.frame_lag(b, tracks, truth)
 
-    def test_best_lag_short_runs(self):
-        truth = {f: np.zeros((f % 3, 2)) for f in range(5)}
-        self.assertEqual(evaluate.best_lag(truth, truth, list(range(5))), 0)
-        self.assertEqual(evaluate.best_lag({}, {}, []), 0)
+    def test_frame_lag_finds_offset(self):
+        self.assertAlmostEqual(self._lag_case(0), 0.0)
+        self.assertAlmostEqual(self._lag_case(3), 3.0)
+
+    def test_frame_lag_without_matches(self):
+        corners = [[0, 0], [1, 0], [1, 1], [0, 1]]
+        b = {'meters_per_pixel': 0.1, 'cameras': [{'id': 'a', 'frame_points': corners, 'map_points': corners}]}
+        self.assertIsNone(evaluate.frame_lag(b, {}, {}))
 
     def test_truth_paths_only_use_given_frames(self):
         raw = {f: {1: np.array([10.0 + f, 10.0])} for f in range(40)}

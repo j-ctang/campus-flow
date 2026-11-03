@@ -40,7 +40,7 @@ def gray(img, keep):
     return out
 
 
-def compose(base, grid, cam_meta, areas, heat, covered, highlight, field=None, min_count=3):
+def compose(base, grid, cam_meta, areas, heat, covered, highlight, field=None, min_count=None):
     img = gray(base, covered)
     vmax = max(float(np.percentile(heat[covered], 99.5)) if covered.any() else 1.0, 1e-9)
     level = np.clip(heat / vmax, 0, 1)
@@ -99,7 +99,7 @@ def main():
     ap.add_argument('--fps', type=float, default=10.0)
     ap.add_argument('--tracks', help='tracks JSON from sam_tracks.py; draws flow arrows')
     ap.add_argument('--cell-m', type=float, default=4.0, help='flow grid cell size')
-    ap.add_argument('--min-count', type=int, default=8, help='tracks a flow arrow needs')
+    ap.add_argument('--min-count', type=int, help='fixed tracks a flow arrow needs; default scales with the crowd')
     a = ap.parse_args()
     top, out = Path(a.topdown), Path(a.out)
     out.mkdir(parents=True, exist_ok=True)

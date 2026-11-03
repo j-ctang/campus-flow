@@ -1,7 +1,10 @@
 """Person tracks + bundle -> directional flow arrows on the map.
 
-Tracks JSON: {"<camera id>": {"<track id>": [[frame, x, y], ...]}} with x, y
-the foot point in frame pixels. A flat {"<track id>": [...]} file is read as
+Tracks JSON: {"<camera id>": {"<track id>": [[frame, x, y, top], ...]}} with
+x, y the foot point (box bottom center) and top the box top, in frame pixels;
+top is optional. When legs are hidden behind someone, the box bottom jumps up
+and the foot lands meters away on the map. With top, such points get the foot
+back from the box top plus the person's usual box height nearby. A flat {"<track id>": [...]} file is read as
 one camera (--camera). Each track is mapped through the ground homography,
 joined to a track that starts right where it ends (IDs restart per SAM
 chunk), split at gaps and jumps, smoothed, and dropped if too short or
@@ -10,7 +13,10 @@ stationary.
 Flow is counted on a coarse grid. Every track adds one crossing to each cell it
 walks through, in one of `bins` direction bins, so opposite streams stay
 separate. Rate = crossings per minute of footage. Speed is not used.
-Usage: python flow.py <bundle.json> <tracks.json> <output dir> [--camera cam10] [--fps 10] [--cell-m 4] [--min-count 8]
+An arrow needs a share of the busy cells' traffic (MIN_SHARE_OF_BUSY of the
+95th percentile cell), so the threshold grows with the crowd. A fixed
+--min-count overrides it.
+Usage: python flow.py <bundle.json> <tracks.json> <output dir> [--camera cam10] [--fps 10] [--cell-m 4] [--min-count N]
 """
 import os
 for _name in ('OMP_NUM_THREADS', 'OPENBLAS_NUM_THREADS', 'MKL_NUM_THREADS', 'NUMEXPR_NUM_THREADS', 'VECLIB_MAXIMUM_THREADS'):
@@ -30,8 +36,10 @@ import transform  # noqa: E402
 
 MAX_SPEED_MPS = 6.0  # faster steps (beyond pixel noise) are ID swaps
 NOISE_PX = 4.0  # box bottoms jitter by a few frame pixels
-MAX_GAP_S = 0.5  # a longer gap splits a track
+MAX_GAP_S = 1.0  # a longer gap splits a track; shorter gaps are joined
 SMOOTH_S = 0.5  # median, then mean, over this window
+HEIGHT_WINDOW_S = 1.0  # usual box height: over this much track on each side
+HIDDEN_FEET = 0.85  # a box shorter than this share of the usual height hides the feet
 
 
 def load_tracks(path, camera=None):
@@ -54,6 +62,21 @@ def smooth(points, w):
     if w < 2 or len(points) < w:
         return points
     return _window(_window(points, w, np.median), w, np.mean)
+
+
+def feet(t, fps):
+    """Foot points in frame pixels from [frame, x, bottom(, top)] rows. A box
+    much shorter than usual nearby has its feet hidden: its foot is moved to
+    top + usual height. Boxes cut by the frame top keep their bottom."""
+    xy = t[:, 1:3].copy()
+    if t.shape[1] < 4 or len(t) < 3:
+        return xy
+    h = t[:, 2] - t[:, 3]
+    near = np.abs(t[:, None, 0] - t[None, :, 0]) <= HEIGHT_WINDOW_S * fps
+    usual = np.array([np.percentile(h[k], 80) for k in near])
+    hidden = (h < HIDDEN_FEET * usual) & (t[:, 3] > 1)
+    xy[hidden, 1] = t[hidden, 3] + usual[hidden]
+    return xy
 
 
 def pixel_size(H, xy):
@@ -98,7 +121,7 @@ def stitch(parts, fps, m):
         chain = [head]
         while chain[-1] in nxt:
             chain.append(nxt[chain[-1]])
-        out.append(tuple(np.concatenate([parts[i][j] for i in chain]) for j in range(3)))
+        out.append(tuple(np.concatenate([parts[i][j] for i in chain]) for j in range(len(parts[head]))))
     return out
 
 
@@ -113,8 +136,11 @@ def map_tracks(bundle, tracks, fps, owner, min_s=1.5, min_move_m=1.0):
         H = transform.fit(cam['frame_points'], cam['map_points'])
         parts = []
         for track in tracks.get(cam['id'], {}).values():
-            t = np.asarray(sorted(track), float).reshape(-1, 3)
-            p, size = transform.apply(H, t[:, 1:]), pixel_size(H, t[:, 1:])
+            if not track:
+                continue
+            t = np.asarray(sorted(track), float)
+            xy = feet(t, fps)
+            p, size = transform.apply(H, xy), pixel_size(H, xy)
             x, y = np.round(p[:, 0]).astype(int), np.round(p[:, 1]).astype(int)
             ok = (x >= 0) & (x < wid) & (y >= 0) & (y < h)
             ok[ok] = owner[y[ok], x[ok]] == i
@@ -206,9 +232,27 @@ def peaks(counts):
     return top
 
 
-def arrows(field, min_count=3, min_cover=.5, min_share=.15):
+MIN_SHARE_OF_BUSY = 0.2  # arrow threshold: share of the 95th percentile cell's tracks
+MIN_COUNT_FLOOR = 3
+
+
+def auto_min_count(field, share=MIN_SHARE_OF_BUSY, floor=MIN_COUNT_FLOOR, min_cover=.5):
+    """Tracks an arrow needs, scaled to the crowd: `share` of the tracks in a
+    busy cell (95th percentile of seen cells with any flow), at least `floor`.
+    A sparse scene keeps weak streams; a dense one hides minor ones."""
+    total = field['counts'].sum(2)
+    busy = total[(field['covered_frac'] >= min_cover) & (total > 0)]
+    if not len(busy):
+        return floor
+    return max(floor, int(np.ceil(share * np.percentile(busy, 95))))
+
+
+def arrows(field, min_count=None, min_cover=.5, min_share=.15):
     """[(center, unit direction, people per minute)], one per direction peak in
-    cells with at least `min_count` tracks and `min_share` of the top rate."""
+    cells with at least `min_count` tracks (default: auto_min_count) and
+    `min_share` of the top rate."""
+    if min_count is None:
+        min_count = auto_min_count(field, min_cover=min_cover)
     cell, per_min = field['cell_px'], 1 / field['minutes']
     out = []
     for j, i in zip(*np.nonzero(field['counts'].sum(2) >= min_count)):
@@ -224,7 +268,7 @@ def arrows(field, min_count=3, min_cover=.5, min_share=.15):
     return [a for a in out if a[2] >= min_share * top_rate]
 
 
-def draw_flow(img, field, min_count=3, max_width=None, ref_rate=None, color=(255, 255, 255)):
+def draw_flow(img, field, min_count=None, max_width=None, ref_rate=None, color=(255, 255, 255)):
     """Draw one arrow per supported cell and direction. Width grows with people
     per minute; each arrow sits a little to its own right, so opposite streams
     show side by side. Returns the rate drawn at full width."""
@@ -244,9 +288,9 @@ def draw_flow(img, field, min_count=3, max_width=None, ref_rate=None, color=(255
     return ref
 
 
-def summary(field, min_count=3):
+def summary(field, min_count=None):
     items = arrows(field, min_count)
-    return {'minutes': field['minutes'], 'tracks_kept': field['tracks_kept'], 'tracks_dropped': field['tracks_dropped'],
+    return {'min_count': auto_min_count(field) if min_count is None else min_count, 'minutes': field['minutes'], 'tracks_kept': field['tracks_kept'], 'tracks_dropped': field['tracks_dropped'],
             'cell_m': field['cell_m'], 'arrows': len(items),
             'max_people_per_min': max((r for *_, r in items), default=0.0)}
 
@@ -259,7 +303,7 @@ def main():
     ap.add_argument('--camera')
     ap.add_argument('--fps', type=float, default=10.0)
     ap.add_argument('--cell-m', type=float, default=4.0)
-    ap.add_argument('--min-count', type=int, default=8)
+    ap.add_argument('--min-count', type=int, help='fixed tracks per arrow; default scales with the crowd')
     a = ap.parse_args()
     b = bundle_io.load(a.bundle)
     base = cv2.imread(str(b['map_image']))

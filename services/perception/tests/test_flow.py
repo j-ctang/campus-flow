@@ -78,6 +78,29 @@ class FlowTests(unittest.TestCase):
         self.assertEqual(f['tracks_kept'], 2)
         self.assertEqual(int(f['counts'].sum(2).max()), 1)  # no cell counts the walker twice
 
+    def test_short_gap_is_joined(self):
+        w = walk([40, 200], [1.2, 0], 20)
+        f = field({'a': w[:100], 'b': w[108:]})  # SAM lost the walker for 0.8 s
+        self.assertEqual(f['tracks_kept'], 1)
+
+    def test_hidden_feet_use_box_top(self):
+        # 40 px tall walker; legs hidden for 5 frames: box bottom rises 15 px.
+        t = np.array([[k, 40 + 1.2 * k, 200 - (15 if 50 <= k < 55 else 0), 160] for k in range(100)], float)
+        self.assertTrue(np.allclose(flow.feet(t, FPS)[:, 1], 200))
+        self.assertTrue(np.allclose(flow.feet(t[:, :3], FPS)[50:55, 1], 185))  # no top: box bottom as is
+        f = field({'x': t.tolist()})
+        self.assertEqual(f['tracks_kept'], 1)
+
+    def test_arrow_threshold_scales_with_crowd(self):
+        sparse = field({str(i): walk([40, 200], [1.2, 0], 20) for i in range(4)})
+        dense = field({**{str(i): walk([40, 200], [1.2, 0], 20) for i in range(100)},
+                       **{f'm{i}': walk([40, 100], [1.2, 0], 20) for i in range(10)}})
+        self.assertEqual(flow.auto_min_count(sparse), 3)  # floor
+        self.assertEqual(flow.auto_min_count(dense), 20)  # 20% of the busy cells' 100
+        rows = {round(float(c[1])) for c, *_ in flow.arrows(dense)}
+        self.assertNotIn(110, rows)  # 10 walkers vanish next to 100 ...
+        self.assertTrue(flow.arrows(field({f'm{i}': walk([40, 100], [1.2, 0], 20) for i in range(10)})))  # ... not alone
+
     def test_draw_flow_marks_image(self):
         f = field({str(i): walk([40, 200], [1.2, 0], 10) for i in range(4)})
         img = np.zeros((400, 400, 3), np.uint8)

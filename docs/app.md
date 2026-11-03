@@ -88,7 +88,7 @@ Next:
 
 | Run | Cameras | Ground covered | People per frame (mean, peak) | Flow arrows |
 | --- | --- | --- | --- | --- |
-| SCOUT, 20 minutes | 8 | 3,119 m² | 23.3, 44 | 166 |
+| SCOUT, 20 minutes | 8 | 3,119 m² | 23.3, 44 | 117 |
 | CityStreet, 200 frames | 3 | 882 m² | 68.3, not measured | none: CityStreet is still frames, not video |
 
 On CityStreet, the heat map matches the official ground labels with map correlation 0.81, and 72% of people are placed within 2 m.
