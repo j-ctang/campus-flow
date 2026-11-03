@@ -83,6 +83,18 @@ Done when there is a table of five or more datasets with: link, license, whether
 
 Done when there is a draft slide outline.
 
+### 8. Run the other 21 SCOUT cameras
+
+Camera 10 is done. The other 21 cameras of sequence 2 still need person detection, so the map can show heat and flow across the whole campus.
+
+- Ask the team before you start. Detection costs about 50 to 100 USD of the shared SAM credits: about 2.40 USD per camera for one crop, double for a busy camera split into two crops.
+- For each camera: download its preview video from SCOUT, build its bundle (`make_bundle.py`, or task 2), run `sam_video.py`, then merge with `sam_tracks.py`.
+- Check one still frame first. If more than 16 people stand on the covered ground, split the view into overlapping crops, as for camera 10.
+- Run one camera at a time and keep the usage ledger up to date.
+- The steps and SAM rules are in `services/perception/scout/README.md` (pull request #2).
+
+Done when every camera has detections and the demo map shows heat and flow for all of them.
+
 ## Setup
 
 The requirements file and tests arrive with pull request #2.
