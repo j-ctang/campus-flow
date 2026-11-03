@@ -9,9 +9,17 @@ D=data/scout; T=outputs/scout/topdown; C=outputs/scout/cam10
 python services/perception/scout/topdown.py $D $T                 # map.png, map.json
 python services/perception/scout/cameras.py $D $T                 # cameras.json, view-areas.npz, camera-map.png
 python services/perception/scout/make_bundle.py $D $T $D/videos/s2_cam_10_preview.mp4 $C
-python services/perception/scout/sam_video.py CROP.mp4 $C/sam/left100 --ledger LEDGER.json --budget 2.40
+caffeinate -i python services/perception/scout/sam_video.py CROP.mp4 $C/sam/left100 --ledger LEDGER.json --budget 2.40
 python services/perception/scout/sam_tracks.py cam10 $C/detections.json $C/sam/left100:240:100:2:0:600 $C/sam/right100:560:100:2:600:852
 python services/perception/scout/demo_map.py $T $C/bundle.json $C/detections.json $C/demo --tracks $C/detections-tracks.json
+```
+
+Several cameras: run the steps above per camera, then merge them. List the camera with the best view of shared ground first; it owns that ground.
+
+```sh
+python services/perception/scout/merge_cameras.py outputs/scout/multi outputs/scout/cam10 outputs/scout/cam9 outputs/scout/cam11 outputs/scout/cam12
+python services/perception/scout/demo_map.py $T outputs/scout/multi/bundle.json outputs/scout/multi/detections.json outputs/scout/multi/demo \
+  --tracks outputs/scout/multi/tracks.json --highlight cam9,cam10,cam11,cam12
 ```
 
 ## Person detection with SAM video
@@ -22,7 +30,8 @@ python services/perception/scout/demo_map.py $T $C/bundle.json $C/detections.jso
 - **At most 16 people per frame.** Split a busy frame into overlapping crops, one request each. `sam_tracks.py` gives each person to the crop whose band holds their feet, so no one is counted twice.
 - **Long requests can fail mid-stream.** A 11,970-frame request failed after 2,322 frames. A failure now costs at most one chunk.
 - **Resumable.** Each finished chunk is cached. A rerun skips finished chunks.
-- **Network errors resume, API errors stop.** A timeout, reset or broken pipe waits 60 s and retries the same chunk, at most 5 times per run. A stream that sends nothing for 60 s counts as a timeout. Any error answer from the API stops the run at once.
+- **Keep the Mac awake.** Idle sleep pauses Wi-Fi and breaks long runs. Start SAM runs with `caffeinate -i` (macOS).
+- **Network errors resume, API errors stop.** A timeout, reset, broken pipe or server-busy answer (HTTP 429, 502, 503, 504) waits 60 s and retries the same chunk, at most 5 times per run. A request that takes over 5 minutes counts as a timeout. Any other error answer from the API stops the run at once.
 - **Spending.** One request at a time, a pause between requests. Every request goes into the usage ledger as soon as it ends. `--budget` refuses a run whose nominal cost is higher. Price: 0.20 USD per 1,000 frames, at least 50 frames per request.
 - Track IDs restart in every chunk. The flow step joins tracks across chunk boundaries.
 

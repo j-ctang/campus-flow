@@ -9,23 +9,28 @@ cut into short chunks (default 100 frames, 10 s at 10 fps), one request each:
 - Chunks run one at a time, with --pause seconds between requests.
 - Each finished chunk is cached as chunk-<start>-<end>.sse; a rerun skips
   finished chunks, so a failure costs at most one chunk.
-- Network errors (timeouts, resets, broken pipes) wait --network-wait
+- Network errors (timeouts, resets, broken pipes) and server-busy answers
+  (HTTP 429, 502, 503, 504) wait --network-wait
   seconds and retry the same chunk, at most --network-resumes times per run.
-  Any API error (an HTTP error status or a failed response) stops the run at
+  Any other API error (such as 400 or 401, or a failed response) stops the run at
   once; rerun to resume.
 - Every request is appended to the usage ledger (--ledger) right after it ends.
 - --budget caps the nominal cost of new requests in this run.
 
-The API key is read from MODEL_API_KEY in <repo>/.env and never printed.
+The API key comes from the MODEL_API_KEY environment variable, or else from
+<repo>/.env, and is never printed.
 
 Usage: python sam_video.py <video.mp4> <output dir> --ledger <usage-ledger.json>
-       [--chunk 100] [--pause 10] [--budget 5.0] [--start N --end M]
+       [--chunk 100] [--pause 3] [--budget 5.0] [--start N --end M]
 """
 import argparse
 import http.client
 import json
+import os
+import socket
 import subprocess
 import sys
+import threading
 import time
 import urllib.error
 import urllib.request
@@ -35,11 +40,16 @@ from pathlib import Path
 API = 'https://api.meta.ai/v1'
 ROOT = Path(__file__).resolve().parents[3]
 STALL_S = 60  # a stream read that waits longer counts as a network error
+DEADLINE_S = 300  # whole request; a normal 100-frame chunk takes about 10 s
+UPLOAD_TIMEOUT_S = 120
+RETRY_STATUS = {429, 502, 503, 504}
 USD_PER_FRAME = 0.20 / 1000  # official price, checked November 2026
 MIN_FRAMES = 50
 
 
 def key():
+    if os.environ.get('MODEL_API_KEY'):
+        return os.environ['MODEL_API_KEY']
     for line in (ROOT / '.env').read_text().splitlines():
         if line.startswith('MODEL_API_KEY='):
             return line.split('=', 1)[1].strip()
@@ -68,7 +78,7 @@ def cut(video, start, end, path):
 def is_network_error(e):
     """True for connection trouble, False for answers from the API."""
     if isinstance(e, urllib.error.HTTPError):
-        return False
+        return e.code in RETRY_STATUS  # server busy or briefly down; other answers are final
     return isinstance(e, (urllib.error.URLError, TimeoutError, ConnectionError, http.client.HTTPException, OSError))
 
 
@@ -80,38 +90,87 @@ def upload(path, token):
     body = head + path.read_bytes() + f'\r\n--{boundary}--\r\n'.encode()
     req = urllib.request.Request(f'{API}/files', body, {'Authorization': f'Bearer {token}',
                                                         'Content-Type': f'multipart/form-data; boundary={boundary}'})
-    with urllib.request.urlopen(req, timeout=900) as r:
+    with urllib.request.urlopen(req, timeout=UPLOAD_TIMEOUT_S) as r:
         info = json.load(r)
     if not info.get('id'):
         sys.exit(f'upload failed: {info}')
     return info['id']
 
 
+def _stream(req, partial, held, result):
+    """Worker: send the request and copy the stream to partial.
+
+    Network trouble after the final event is ignored: the answer is in.
+    Errors writing or closing the cache file always count, so an incomplete
+    file is never kept.
+    """
+    try:
+        f = open(partial, 'wb')
+    except OSError as e:
+        result['cache_error'] = e
+        return
+    try:
+        try:
+            with urllib.request.urlopen(req, timeout=STALL_S) as r:
+                held['r'] = r
+                for line in r:
+                    try:
+                        f.write(line)
+                    except OSError as e:
+                        result['cache_error'] = e
+                        raise
+                    if line.startswith(b'data: '):
+                        try:
+                            ev = json.loads(line[6:])
+                        except ValueError:
+                            continue
+                        if ev.get('type') in ('response.completed', 'response.failed', 'response.incomplete', 'error'):
+                            result['final'] = ev
+                            break  # final event: stop even if the server keeps the connection open
+        except Exception as e:
+            if 'cache_error' not in result and 'final' not in result:
+                result['error'] = e
+    finally:
+        try:
+            f.close()
+        except OSError as e:
+            result.setdefault('cache_error', e)
+
+
 def segment(file_id, token, out):
-    """One streamed request. Returns the final stream event (or None)."""
+    """One streamed request. Returns the final stream event (or None).
+
+    The whole request (connect, headers, stream) runs in a worker thread
+    with one wall-clock deadline. The read timeout alone misses some hung
+    connections (seen: no data for 18 min). At the deadline the socket is
+    shut down and the request counts as a network error. Each attempt writes
+    its own partial file, so an abandoned worker cannot touch the next try.
+    """
     body = {'model': 'sam-3.1', 'stream': True, 'metadata': {'mask_encoding': 'one_bit'},
             'input': [{'type': 'message', 'role': 'user', 'content': [
                 {'type': 'input_text', 'text': 'person'}, {'type': 'input_video', 'file_id': file_id}]}]}
     req = urllib.request.Request(f'{API}/responses', json.dumps(body).encode(),
                                  {'Authorization': f'Bearer {token}', 'Content-Type': 'application/json'})
-    partial = out.with_suffix('.partial')
-    final = None
-    try:
-        with urllib.request.urlopen(req, timeout=STALL_S) as r, open(partial, 'wb') as f:
-            for line in r:
-                f.write(line)
-                if line.startswith(b'data: '):
-                    try:
-                        ev = json.loads(line[6:])
-                    except ValueError:
-                        continue
-                    if ev.get('type') in ('response.completed', 'response.failed', 'response.incomplete', 'error'):
-                        final = ev
-    except Exception as e:
-        kind = 'network_error' if is_network_error(e) else 'client_error'
-        final = {'type': kind, 'error': {'message': str(e)}}
-    status = (final or {}).get('response', {}).get('status')
-    if status == 'completed':
+    partial = out.with_name(f'{out.stem}.{uuid.uuid4().hex[:8]}.partial')
+    held, result = {}, {}
+    worker = threading.Thread(target=_stream, args=(req, partial, held, result), daemon=True)
+    worker.start()
+    worker.join(DEADLINE_S)
+    if worker.is_alive():
+        r = held.get('r')
+        if r is not None:
+            try:
+                r.fp.raw._sock.shutdown(socket.SHUT_RDWR)
+            except (AttributeError, OSError):
+                pass
+        return {'type': 'network_error', 'error': {'message': f'no answer within {DEADLINE_S} s'}}
+    if 'cache_error' in result:
+        return {'type': 'client_error', 'error': {'message': f'cache file: {result["cache_error"]}'}}
+    if 'error' in result:
+        e = result['error']
+        return {'type': 'network_error' if is_network_error(e) else 'client_error', 'error': {'message': str(e)}}
+    final = result.get('final')
+    if (final or {}).get('response', {}).get('status') == 'completed':
         partial.replace(out)
     return final
 
@@ -136,7 +195,7 @@ def main():
     ap.add_argument('out')
     ap.add_argument('--ledger', required=True)
     ap.add_argument('--chunk', type=int, default=100)
-    ap.add_argument('--pause', type=float, default=10)
+    ap.add_argument('--pause', type=float, default=3)
     ap.add_argument('--budget', type=float, default=5.0)
     ap.add_argument('--start', type=int, default=0, help='first frame to cover')
     ap.add_argument('--end', type=int, help='frame after the last to cover')

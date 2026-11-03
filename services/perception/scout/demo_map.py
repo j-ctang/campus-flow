@@ -50,21 +50,35 @@ def compose(base, grid, cam_meta, areas, heat, covered, highlight, field=None, m
     flow_ref = flow.draw_flow(img, field, min_count) if field else None  # under outlines and icons
     for name, area in areas.items():
         cs, _ = cv2.findContours(np.uint8(area), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        cv2.drawContours(img, cs, -1, HIGHLIGHT if name == highlight else OTHER, 3 if name == highlight else 2, cv2.LINE_AA)
+        cv2.drawContours(img, cs, -1, HIGHLIGHT if name in highlight else OTHER, 3 if name in highlight else 2, cv2.LINE_AA)
     placed = []
     for name, c in cam_meta.items():
         p = grid.to_px(np.array(c['center'][:2]))
         row = sum(np.linalg.norm(p - q) < 40 for q in placed)
         placed.append(p)
-        cams.draw_icon(img, grid, c, HIGHLIGHT if name == highlight else OTHER, name, name == highlight, row)
+        cams.draw_icon(img, grid, c, HIGHLIGHT if name in highlight else OTHER, name, name in highlight, row)
     return img, vmax, flow_ref
+
+
+def frames_only(tracks, frames):
+    """Keep track points on the frames the heat layer used, so flow rates
+    divide by the same footage time."""
+    keep = {int(k) for k in frames}
+    out = {}
+    for cam, per in tracks.items():
+        out[cam] = {}
+        for tid, pts in per.items():
+            kept = [p for p in pts if int(p[0]) in keep]
+            if kept:
+                out[cam][tid] = kept
+    return out
 
 
 def legend(width, vmax, frames, seconds, people, highlight, n_cams, flow_ref=None):
     pad = np.full((150 if flow_ref is None else 172, width, 3), 255, np.uint8)
     t = lambda s, y, sc=.7, th=2: cv2.putText(pad, s, (16, y), cv2.FONT_HERSHEY_SIMPLEX, sc, (0, 0, 0), th, cv2.LINE_AA)  # noqa: E731
     t('SCOUT campus (EPFL): crowd concentration', 32, .9)
-    t(f'Heat: {highlight}, {frames} frames ({seconds / 60:.0f} min), {people:.1f} people per frame on average.', 64, .55, 1)
+    t(f'Heat: {", ".join(highlight)}, {frames} frames ({seconds / 60:.0f} min), {people:.1f} people per frame on average.', 64, .55, 1)
     bar = cv2.applyColorMap(np.uint8(np.linspace(0, 255, 260))[None, :].repeat(14, 0), cv2.COLORMAP_JET)
     pad[80:94, 16:276] = bar
     cv2.putText(pad, f'0 .. {vmax:.2f} people/m2', (286, 93), cv2.FONT_HERSHEY_SIMPLEX, .55, (0, 0, 0), 1, cv2.LINE_AA)
@@ -81,7 +95,7 @@ def main():
     ap.add_argument('bundle')
     ap.add_argument('detections')
     ap.add_argument('out')
-    ap.add_argument('--highlight', default='cam10')
+    ap.add_argument('--highlight', default='cam10', help='comma-separated camera ids')
     ap.add_argument('--sigma-m', type=float, default=1.0)
     ap.add_argument('--point', default='feet', choices=('feet', 'head'))
     ap.add_argument('--fps', type=float, default=10.0)
@@ -97,6 +111,7 @@ def main():
     b = bundle_io.load(a.bundle)
     result = heatmap.run(b, json.loads(Path(a.detections).read_text()), a.sigma_m, a.point)
     processed = [c['id'] for c in b['cameras']]
+    a.highlight = a.highlight.split(',')
     covered = result['covered'] & np.any([areas[c] for c in processed], 0)
     m = b['meters_per_pixel']
     pts = {k: p for k, p in result['points'].items()}
@@ -105,8 +120,8 @@ def main():
     base = cv2.imread(str(top / 'map.png'))
     field = None
     if a.tracks:
-        field = flow.flow_field(b, flow.load_tracks(a.tracks, a.highlight), a.fps, a.cell_m, covered=covered,
-                                duration_s=len(pts) / a.fps)
+        field = flow.flow_field(b, frames_only(flow.load_tracks(a.tracks, a.highlight[0]), pts), a.fps, a.cell_m,
+                                covered=covered, duration_s=len(pts) / a.fps)
     img, vmax, flow_ref = compose(base, grid, meta, areas, heat, covered, a.highlight, field, a.min_count)
     people = float(np.mean([len(p) for p in pts.values()]))
     final = np.vstack([legend(img.shape[1], vmax, len(pts), len(pts) / a.fps, people, a.highlight, len(meta), flow_ref), img])
