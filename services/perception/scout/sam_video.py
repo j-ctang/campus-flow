@@ -9,9 +9,10 @@ cut into short chunks (default 100 frames, 10 s at 10 fps), one request each:
 - Chunks run one at a time, with --pause seconds between requests.
 - Each finished chunk is cached as chunk-<start>-<end>.sse; a rerun skips
   finished chunks, so a failure costs at most one chunk.
-- Network errors (timeouts, resets, broken pipes) wait --network-wait
+- Network errors (timeouts, resets, broken pipes) and server-busy answers
+  (HTTP 429, 502, 503, 504) wait --network-wait
   seconds and retry the same chunk, at most --network-resumes times per run.
-  Any API error (an HTTP error status or a failed response) stops the run at
+  Any other API error (such as 400 or 401, or a failed response) stops the run at
   once; rerun to resume.
 - Every request is appended to the usage ledger (--ledger) right after it ends.
 - --budget caps the nominal cost of new requests in this run.
@@ -39,6 +40,7 @@ ROOT = Path(__file__).resolve().parents[3]
 STALL_S = 60  # a stream read that waits longer counts as a network error
 DEADLINE_S = 300  # whole request; a normal 100-frame chunk takes about 10 s
 UPLOAD_TIMEOUT_S = 120
+RETRY_STATUS = {429, 502, 503, 504}
 USD_PER_FRAME = 0.20 / 1000  # official price, checked November 2026
 MIN_FRAMES = 50
 
@@ -72,7 +74,7 @@ def cut(video, start, end, path):
 def is_network_error(e):
     """True for connection trouble, False for answers from the API."""
     if isinstance(e, urllib.error.HTTPError):
-        return False
+        return e.code in RETRY_STATUS  # server busy or briefly down; other answers are final
     return isinstance(e, (urllib.error.URLError, TimeoutError, ConnectionError, http.client.HTTPException, OSError))
 
 

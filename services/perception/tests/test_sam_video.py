@@ -20,9 +20,13 @@ class NetworkErrorTests(unittest.TestCase):
                   socket.timeout('timed out'), http.client.RemoteDisconnected('Remote end closed')):
             self.assertTrue(sam_video.is_network_error(e), e)
 
+    def test_server_busy_answers_are_retried(self):
+        for code in (429, 502, 503, 504):
+            self.assertTrue(sam_video.is_network_error(urllib.error.HTTPError('https://api', code, 'busy', {}, None)), code)
+
     def test_api_answers_are_not_network(self):
-        e = urllib.error.HTTPError('https://api', 429, 'Too Many Requests', {}, None)
-        self.assertFalse(sam_video.is_network_error(e))
+        for code in (400, 401, 403, 404, 500):
+            self.assertFalse(sam_video.is_network_error(urllib.error.HTTPError('https://api', code, 'no', {}, None)), code)
         self.assertFalse(sam_video.is_network_error(ValueError('bad json')))
 
 

@@ -31,7 +31,7 @@ python services/perception/scout/demo_map.py $T outputs/scout/multi/bundle.json 
 - **Long requests can fail mid-stream.** A 11,970-frame request failed after 2,322 frames. A failure now costs at most one chunk.
 - **Resumable.** Each finished chunk is cached. A rerun skips finished chunks.
 - **Keep the Mac awake.** Idle sleep pauses Wi-Fi and breaks long runs. Start SAM runs with `caffeinate -i` (macOS).
-- **Network errors resume, API errors stop.** A timeout, reset or broken pipe waits 60 s and retries the same chunk, at most 5 times per run. A stream that sends nothing for 60 s counts as a timeout. Any error answer from the API stops the run at once.
+- **Network errors resume, API errors stop.** A timeout, reset, broken pipe or server-busy answer (HTTP 429, 502, 503, 504) waits 60 s and retries the same chunk, at most 5 times per run. A request that takes over 5 minutes counts as a timeout. Any other error answer from the API stops the run at once.
 - **Spending.** One request at a time, a pause between requests. Every request goes into the usage ledger as soon as it ends. `--budget` refuses a run whose nominal cost is higher. Price: 0.20 USD per 1,000 frames, at least 50 frames per request.
 - Track IDs restart in every chunk. The flow step joins tracks across chunk boundaries.
 
