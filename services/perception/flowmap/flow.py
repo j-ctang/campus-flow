@@ -154,6 +154,15 @@ def flow_field(bundle, tracks, fps, cell_m=2.0, bins=8, covered=None, duration_s
     owner = heatmap.ownership(bundle['cameras'], shape)
     cov = owner >= 0 if covered is None else covered & (owner >= 0)
     paths, dropped = map_tracks(bundle, tracks, fps, owner, min_s, min_move_m)
+    if duration_s is None:
+        frames = [f for cam in tracks.values() for t in cam.values() for f, *_ in t]
+        duration_s = (max(frames) - min(frames) + 1) / fps if frames else 1.0
+    return dict(field_from_paths(paths, shape, cov, m, duration_s, cell_m, bins), tracks_dropped=dropped)
+
+
+def field_from_paths(paths, shape, cov, m, duration_s, cell_m=2.0, bins=8):
+    """Crossings per cell and direction bin from clean map-pixel paths. Used
+    directly for paths that are already on the map, such as ground truth."""
     cell = cell_m / m
     ny, nx = int(np.ceil(shape[0] / cell)), int(np.ceil(shape[1] / cell))
     counts = np.zeros((ny, nx, bins))
@@ -176,14 +185,11 @@ def flow_field(bundle, tracks, fps, cell_m=2.0, bins=8, covered=None, duration_s
             b = int(np.round(np.arctan2(v[1], v[0]) / (2 * np.pi / bins))) % bins
             counts[j, i, b] += 1
             vec[j, i, b] += v / n
-    if duration_s is None:
-        frames = [f for cam in tracks.values() for t in cam.values() for f, *_ in t]
-        duration_s = (max(frames) - min(frames) + 1) / fps if frames else 1.0
     frac = np.zeros((ny, nx))
     ys, xs = np.nonzero(cov)
     np.add.at(frac, ((ys // cell).astype(int), (xs // cell).astype(int)), 1 / cell ** 2)
     return {'counts': counts, 'vec': vec, 'rate': counts / (duration_s / 60), 'cell_px': cell, 'bins': bins,
-            'covered_frac': frac, 'cell_m': cell_m, 'minutes': duration_s / 60, 'tracks_kept': len(paths), 'tracks_dropped': dropped,
+            'covered_frac': frac, 'cell_m': cell_m, 'minutes': duration_s / 60, 'tracks_kept': len(paths), 'tracks_dropped': 0,
             'paths': paths}
 
 
