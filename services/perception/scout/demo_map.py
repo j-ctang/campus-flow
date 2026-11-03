@@ -51,12 +51,14 @@ def compose(base, grid, cam_meta, areas, heat, covered, highlight, field=None, m
     for name, area in areas.items():
         cs, _ = cv2.findContours(np.uint8(area), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         cv2.drawContours(img, cs, -1, HIGHLIGHT if name in highlight else OTHER, 3 if name in highlight else 2, cv2.LINE_AA)
-    placed = []
+    # Reserve every icon first, so no label lands on a neighbouring camera.
+    taken = []
     for name, c in cam_meta.items():
-        p = grid.to_px(np.array(c['center'][:2]))
-        row = sum(np.linalg.norm(p - q) < 40 for q in placed)
-        placed.append(p)
-        cams.draw_icon(img, grid, c, HIGHLIGHT if name in highlight else OTHER, name, name in highlight, row)
+        x, y = grid.to_px(np.array(c['center'][:2]))
+        r = 16 if name in highlight else 11
+        taken.append((x - r, y - r, x + r, y + r))
+    for name, c in cam_meta.items():
+        cams.draw_icon(img, grid, c, HIGHLIGHT if name in highlight else OTHER, name, name in highlight, taken)
     return img, vmax, flow_ref
 
 
