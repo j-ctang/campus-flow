@@ -51,7 +51,7 @@ So the app is a job, not an instant answer. The viewer needs a progress state: c
 
 ## What comes out
 
-The viewer reads one result folder. Today the pipeline writes `report.json` and finished PNG images. The files below are the target for the viewer. The export step that writes them is the next pipeline task.
+The viewer reads one result folder. `services/perception/flowmap/export.py` writes the layers below from a prepared bundle, cached detections, and optional tracks. It makes no SAM requests. `timeline.json` is not exported yet.
 
 | File | Contents | Layer in the viewer |
 | --- | --- | --- |
@@ -65,6 +65,25 @@ The viewer reads one result folder. Today the pipeline writes `report.json` and 
 | `timeline.json` | Optional. People in view per minute, and heat per time window | Time slider |
 
 Example `flow.json` entry: `{"x": 1427, "y": 1842, "dx": 0.0, "dy": -1.0, "people_per_min": 6.2}`. Positions are map pixels; `dx, dy` is a unit vector in map pixels, with y pointing down.
+
+### Export a result folder
+
+```sh
+python services/perception/flowmap/export.py BUNDLE.json DETECTIONS.json NEW_OUTPUT_DIR \
+  --tracks TRACKS.json --fps 10 --cell-m 4 --north-deg 0
+```
+
+The output directory must not already exist. The exporter publishes it only after every file is written. Omit `--tracks` for still-image datasets: `flow.json` is then an empty list and `report.json.flow` is `null`.
+
+All images have the base map's original dimensions, with no legend or border. Map positions use x right and y down. `--north-deg` is the clockwise angle from image up toward north; omit it when unknown (`map.json.north_deg` is `null`). It records orientation and does not rotate the map.
+
+`heat.png` uses the OpenCV JET palette with density normalized to `report.json.heat_max_people_per_m2` (the covered pixels' 99.5th percentile, floored at 1e-9). Alpha is `0.75 * normalized_density^0.6`, zero outside coverage. This is a display layer, not raw density data. `coverage.png` is opaque gray outside coverage and transparent inside.
+
+`cameras.json` is a list. Each camera has `id`, `position`, `direction`, `direction_source`, `height_m` (or `null`), `view_area`, `area_m2`, and `people_per_frame_mean`. Direction points from the camera position toward the view polygon's centroid; it is an approximate display heading, not calibrated optical orientation. Areas and counts use exclusive ownership: the first listed camera owns overlapping pixels. `view_area` describes the full polygon before overlap removal.
+
+Heat, camera totals, and flow use only frame keys shared by every camera. Duration is shared frame count divided by `--fps`, not elapsed wall time. Flow requires integer frame keys and track frame numbers on the same time base. With multiple cameras, tracks must be nested under camera IDs; flat track files are accepted only for a single-camera bundle. Missing frames are excluded, so a gapped recording does not represent its full elapsed interval.
+
+Coverage follows the bundle's flat-ground view polygons. Unlike the SCOUT-specific demo, this generic exporter does not additionally intersect mesh-derived masks; its totals may differ from that demo. It does not infer visibility behind obstacles.
 
 ## What the viewer must show
 

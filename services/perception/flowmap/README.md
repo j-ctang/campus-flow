@@ -117,3 +117,20 @@ Output: `flow.png` (arrows on the map) and `flow.json` (minutes of footage, trac
 - Head points assume everyone is 1.75 m tall and need the camera position on the map to be accurate.
 - Flow from tracks far from the camera is noisy: one pixel there can be half a meter of ground.
 - Tracks are joined by position only. Two people who meet at a track restart can swap.
+
+## Viewer export
+
+```sh
+python services/perception/flowmap/export.py BUNDLE.json DETECTIONS.json NEW_OUTPUT_DIR \
+  --tracks TRACKS.json --fps 10 --cell-m 4
+```
+
+Writes `map.png`, `map.json`, transparent `heat.png`, gray `coverage.png`,
+`cameras.json`, `flow.json` (arrow entries), and `report.json`. The existing
+`flow.py` command continues to write its summary to its own `flow.json`.
+Use separate output folders for these commands.
+
+The export directory must be new. Omit tracks for heat-only results.
+Set `--north-deg` only when known; otherwise north is `null`. No API requests,
+video decoding, or mesh loading occur. See [the viewer contract](../../../docs/app.md#export-a-result-folder)
+for field meanings, color scale, coverage, timing, and overlap rules.
