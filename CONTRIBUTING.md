@@ -53,14 +53,9 @@ Done when each camera has a bundle file and a screenshot of the four spots in th
 
 Done when there is a short note: which arrows match, which are missing, which look wrong.
 
-### 4. Turn the map north-up
+### 4. Turn the map north-up (done)
 
-The map keeps the 3D mesh axes, so north may not point up.
-
-- Find three or more landmarks, such as building corners, both on the map and on OpenStreetMap.
-- Work out the rotation angle.
-
-Done when we have the angle and the landmark list.
+The map is already north-up: the angle is 0 degrees. The landmark list is in [`services/perception/scout/README.md`](services/perception/scout/README.md#north).
 
 ### 5. Find more crowd data
 

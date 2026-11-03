@@ -22,6 +22,19 @@ python services/perception/scout/demo_map.py $T outputs/scout/multi/bundle.json 
   --tracks outputs/scout/multi/tracks.json --highlight cam9,cam10,cam11,cam12
 ```
 
+## North
+
+The map is north-up: scene +y points north, within 0.5 degrees, not mirrored. `map.json` records this as `north_deg: 0`. This was checked against OpenStreetMap building edges around the scene on the EPFL campus, between buildings BP and BM and along the diagonal stairs past AI, SV and CO. Landmarks (OpenStreetMap building corner, latitude and longitude):
+
+| Landmark | Latitude | Longitude | Map pixel (x, y) |
+|---|---|---|---|
+| BM, south-west corner | 46.520435 | 6.565199 | 1535, 1857 |
+| BP, north-east corner | 46.521902 | 6.564922 | 1323, 224 |
+| AI, north-east corner | 46.520536 | 6.564959 | 1352, 1745 |
+| CO, north-west corner | 46.520211 | 6.564221 | 786, 2106 |
+
+Map pixels are predicted from the best OpenStreetMap fit, at 0.1 m per pixel. Walls in the mesh sit 0.5 to 5 m from the OpenStreetMap outlines. Building data © OpenStreetMap contributors.
+
 ## Person detection with SAM video
 
 `sam_video.py` sends a video to the hosted SAM 3.1 model in short chunks. Rules learned on SCOUT camera 10:
