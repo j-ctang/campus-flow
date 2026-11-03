@@ -67,8 +67,24 @@ class Trickle(http.server.BaseHTTPRequestHandler):
         pass
 
 
+class CompletesThenHangs(http.server.BaseHTTPRequestHandler):
+    def do_POST(self):
+        self.rfile.read(int(self.headers['Content-Length']))
+        self.send_response(200)
+        self.send_header('Content-Type', 'text/event-stream')
+        self.end_headers()
+        self.wfile.write(b'data: {"type":"response.output_text.delta","delta":"<0f>"}\n')
+        self.wfile.write(b'data: {"type":"response.completed","response":{"status":"completed",'
+                         b'"usage":{"video_frames_processed":100}}}\n')
+        self.wfile.flush()
+        time.sleep(5)  # keeps the connection open after the final event
+
+    def log_message(self, *args):
+        pass
+
+
 class DeadlineTests(unittest.TestCase):
-    def run_against(self, handler):
+    def run_against(self, handler, keep=None):
         srv = http.server.ThreadingHTTPServer(('127.0.0.1', 0), handler)
         threading.Thread(target=srv.serve_forever, daemon=True).start()
         old = sam_video.API, sam_video.DEADLINE_S, sam_video.STALL_S
@@ -77,10 +93,20 @@ class DeadlineTests(unittest.TestCase):
             with tempfile.TemporaryDirectory() as tmp:
                 start = time.time()
                 final = sam_video.segment('file-x', 'key', Path(tmp) / 'chunk.sse')
-                return final, time.time() - start
+                took = time.time() - start
+                if keep is not None:
+                    keep['saved'] = (Path(tmp) / 'chunk.sse').exists()
+                return final, took
         finally:
             sam_video.API, sam_video.DEADLINE_S, sam_video.STALL_S = old
             srv.shutdown()
+
+    def test_completed_response_is_kept_when_connection_stays_open(self):
+        keep = {}
+        final, took = self.run_against(CompletesThenHangs, keep)
+        self.assertLess(took, 1)
+        self.assertEqual(final['response']['status'], 'completed')
+        self.assertTrue(keep['saved'])
 
     def test_stream_that_never_ends_is_cut_by_the_deadline(self):
         final, took = self.run_against(Trickle)

@@ -105,8 +105,10 @@ def _stream(req, partial, held, result):
                         continue
                     if ev.get('type') in ('response.completed', 'response.failed', 'response.incomplete', 'error'):
                         result['final'] = ev
+                        break  # final event: stop reading even if the server keeps the connection open
     except Exception as e:
-        result['error'] = e
+        if 'final' not in result:
+            result['error'] = e
 
 
 def segment(file_id, token, out):
