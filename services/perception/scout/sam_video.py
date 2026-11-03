@@ -92,23 +92,39 @@ def upload(path, token):
 
 
 def _stream(req, partial, held, result):
-    """Worker: send the request and copy the stream to partial."""
+    """Worker: send the request and copy the stream to partial.
+
+    Network trouble after the final event is ignored: the answer is in.
+    Errors writing or closing the cache file always count, so an incomplete
+    file is never kept.
+    """
+    f = open(partial, 'wb')
     try:
-        with urllib.request.urlopen(req, timeout=STALL_S) as r, open(partial, 'wb') as f:
-            held['r'] = r
-            for line in r:
-                f.write(line)
-                if line.startswith(b'data: '):
+        try:
+            with urllib.request.urlopen(req, timeout=STALL_S) as r:
+                held['r'] = r
+                for line in r:
                     try:
-                        ev = json.loads(line[6:])
-                    except ValueError:
-                        continue
-                    if ev.get('type') in ('response.completed', 'response.failed', 'response.incomplete', 'error'):
-                        result['final'] = ev
-                        break  # final event: stop reading even if the server keeps the connection open
-    except Exception as e:
-        if 'final' not in result:
-            result['error'] = e
+                        f.write(line)
+                    except OSError as e:
+                        result['cache_error'] = e
+                        raise
+                    if line.startswith(b'data: '):
+                        try:
+                            ev = json.loads(line[6:])
+                        except ValueError:
+                            continue
+                        if ev.get('type') in ('response.completed', 'response.failed', 'response.incomplete', 'error'):
+                            result['final'] = ev
+                            break  # final event: stop even if the server keeps the connection open
+        except Exception as e:
+            if 'cache_error' not in result and 'final' not in result:
+                result['error'] = e
+    finally:
+        try:
+            f.close()
+        except OSError as e:
+            result.setdefault('cache_error', e)
 
 
 def segment(file_id, token, out):
@@ -138,6 +154,8 @@ def segment(file_id, token, out):
             except (AttributeError, OSError):
                 pass
         return {'type': 'network_error', 'error': {'message': f'no answer within {DEADLINE_S} s'}}
+    if 'cache_error' in result:
+        return {'type': 'client_error', 'error': {'message': f'cache file: {result["cache_error"]}'}}
     if 'error' in result:
         e = result['error']
         return {'type': 'network_error' if is_network_error(e) else 'client_error', 'error': {'message': str(e)}}

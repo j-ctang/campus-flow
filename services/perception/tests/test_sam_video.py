@@ -108,6 +108,29 @@ class DeadlineTests(unittest.TestCase):
         self.assertEqual(final['response']['status'], 'completed')
         self.assertTrue(keep['saved'])
 
+    def test_cache_write_error_stops_and_keeps_nothing(self):
+        real_open = open
+
+        class Full:
+            def __init__(self, f):
+                self.f = f
+
+            def write(self, data):
+                raise OSError(28, 'No space left on device')
+
+            def close(self):
+                self.f.close()
+
+        sam_video.open = lambda path, mode='r': Full(real_open(path, mode))
+        try:
+            keep = {}
+            final, _ = self.run_against(CompletesThenHangs, keep)
+        finally:
+            del sam_video.open
+        self.assertEqual(final['type'], 'client_error')
+        self.assertIn('No space left', final['error']['message'])
+        self.assertFalse(keep['saved'])
+
     def test_stream_that_never_ends_is_cut_by_the_deadline(self):
         final, took = self.run_against(Trickle)
         self.assertLess(took, 2)
