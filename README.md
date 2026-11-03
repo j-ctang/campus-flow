@@ -18,6 +18,28 @@ This is what Campus Flow makes: where people concentrate, on a top-down map, fro
 
 The figure uses CityStreet, because the SCOUT terms do not allow sharing SCOUT images. The same pipeline runs on the SCOUT campus cameras. `services/perception/citystreet/readme_figure.py` rebuilds the figure.
 
+## Accuracy
+
+Both datasets come with official answer keys. We score the pipeline against them.
+
+| | CityStreet, 3 cameras | SCOUT, 8 cameras |
+| --- | --- | --- |
+| Answer key | Official ground labels | Official annotations, with person IDs over time |
+| Footage | 200 frames, full resolution, 4 tiles per frame | 20 minutes at 10 fps, 852x480 previews, no crops |
+| People per frame, ours vs answer key | 68.3 vs 61.0 | 20.8 vs 53.3 |
+| Count correlation over time | 0.91 | 0.62 |
+| Heat map correlation | 0.81 | 0.71 |
+| People placed within 2 m of a real person | 72% | 25% |
+| Our points within 2 m of a real person | 64% | 65% |
+| Flow: rate correlation per cell and direction | no tracks in the labels | 0.81 |
+| Flow: answer-key arrows we also show | no tracks in the labels | 90% |
+| Flow: our arrows that match an answer-key arrow | no tracks in the labels | 60% |
+
+- **CityStreet** checks where people are. Its labels have no person IDs, so they cannot score flow.
+- **SCOUT** checks flow too: its annotations follow each person over time. The heat map and the main walking streams match well.
+- **SCOUT finds only 39% of the people.** Many are tiny in the low-resolution previews, about half under 20 pixels tall on some cameras, and SAM follows at most 16 people per request. Full-resolution video and crops would fix both. CityStreet, run at full resolution with tiles, does not undercount.
+- `services/perception/scout/evaluate.py` scores a SCOUT run. `services/perception/citystreet/proof.py` scores CityStreet.
+
 ## Data credits
 
 Campus Flow uses the [SCOUT dataset](https://scout.epfl.ch/) from EPFL’s Computer Vision Laboratory (CVLAB), including video, camera calibration, and scene geometry.
