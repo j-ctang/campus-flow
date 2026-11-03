@@ -17,7 +17,8 @@ cut into short chunks (default 100 frames, 10 s at 10 fps), one request each:
 - Every request is appended to the usage ledger (--ledger) right after it ends.
 - --budget caps the nominal cost of new requests in this run.
 
-The API key is read from MODEL_API_KEY in <repo>/.env and never printed.
+The API key comes from the MODEL_API_KEY environment variable, or else from
+<repo>/.env, and is never printed.
 
 Usage: python sam_video.py <video.mp4> <output dir> --ledger <usage-ledger.json>
        [--chunk 100] [--pause 3] [--budget 5.0] [--start N --end M]
@@ -25,6 +26,7 @@ Usage: python sam_video.py <video.mp4> <output dir> --ledger <usage-ledger.json>
 import argparse
 import http.client
 import json
+import os
 import socket
 import subprocess
 import sys
@@ -46,6 +48,8 @@ MIN_FRAMES = 50
 
 
 def key():
+    if os.environ.get('MODEL_API_KEY'):
+        return os.environ['MODEL_API_KEY']
     for line in (ROOT / '.env').read_text().splitlines():
         if line.startswith('MODEL_API_KEY='):
             return line.split('=', 1)[1].strip()
