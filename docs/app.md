@@ -14,9 +14,10 @@ A planner gives us a top-down map and footage from cameras that watch the same a
 | Map scale | Two points on the map and the distance between them in meters | User clicks | 1 minute |
 | Camera videos | One video per camera, recorded at the same time | User uploads | Upload time only |
 | Ground point pairs | 4 spots per camera, each marked once in a video frame and once on the map | User clicks | About 5 minutes per camera |
-| Camera height | Meters above the ground, optional | User types | Seconds |
+| Camera position | Where the camera stands on the map. Required; draws the icon and corrects head points | User clicks | Seconds |
+| Camera height | Meters above the ground, optional; needed for head points | User types | Seconds |
 
-All of this is one input bundle, described in [`services/perception/flowmap/README.md`](../services/perception/flowmap/README.md). The viewer needs a setup screen to collect it: upload the map, set the scale, then for each camera upload the video and click 4 matching spots in the frame and on the map.
+All of this is one input bundle, described in [`services/perception/flowmap/README.md`](../services/perception/flowmap/README.md). The viewer needs a setup screen to collect it: upload the map, set the scale, then for each camera upload the video, click where the camera stands on the map, and click 4 matching spots in the frame and on the map.
 
 Rules for good ground points: flat ground, spread wide, not on one line, away from the horizon.
 
