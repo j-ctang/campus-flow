@@ -2,6 +2,10 @@
 
 Campus Flow maps how people walk through a place, using ordinary camera footage. It turns video into crowd heat maps and flow arrows on a top-down map, to help plan transit and crowd safety. We build and test it on EPFL’s SCOUT campus data. SCOUT images stay private, so public figures and demos use the CityStreet dataset.
 
+![Crowd heat map from our pipeline on a north-up aerial map of the CityStreet junction, with each camera and the ground it sees](docs/images/citystreet-map.jpg)
+
+This is what Campus Flow makes: where people concentrate, on a top-down map, from three ordinary cameras. It shows CityStreet in Hong Kong. `services/perception/citystreet/showcase_map.py` rebuilds it.
+
 ## How it works
 
 ![Pipeline: camera video, people found by SAM, placed on a top-down map, crowd heat map compared with official labels](docs/images/pipeline.jpg)
