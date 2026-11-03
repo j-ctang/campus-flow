@@ -14,6 +14,14 @@ python services/perception/scout/sam_tracks.py cam10 $C/detections.json $C/sam/l
 python services/perception/scout/demo_map.py $T $C/bundle.json $C/detections.json $C/demo --tracks $C/detections-tracks.json
 ```
 
+Several cameras: run the steps above per camera, then merge them. List the camera with the best view of shared ground first; it owns that ground.
+
+```sh
+python services/perception/scout/merge_cameras.py outputs/scout/multi outputs/scout/cam10 outputs/scout/cam9 outputs/scout/cam11 outputs/scout/cam12
+python services/perception/scout/demo_map.py $T outputs/scout/multi/bundle.json outputs/scout/multi/detections.json outputs/scout/multi/demo \
+  --tracks outputs/scout/multi/tracks.json --highlight cam9,cam10,cam11,cam12
+```
+
 ## Person detection with SAM video
 
 `sam_video.py` sends a video to the hosted SAM 3.1 model in short chunks. Rules learned on SCOUT camera 10:
