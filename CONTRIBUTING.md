@@ -45,15 +45,7 @@ Each camera needs four ground points that a person marks by hand: one spot seen 
 
 Done when each camera has a bundle file and a screenshot of the four spots in the frame and on the map.
 
-### 3. Check the detections by hand
-
-- Pick 20 frames spread over the camera 10 video.
-- Count the clearly visible people standing on the plaza in each frame.
-- Compare with the detection counts for the same frames.
-
-Done when there is a table with frame number, your count, the detection count, and missed or extra people.
-
-### 4. Check the flow arrows against the video
+### 3. Check the flow arrows against the video
 
 - Watch 5 minutes of the camera 10 video.
 - Sketch the main walking paths and their directions on the map.
@@ -61,7 +53,7 @@ Done when there is a table with frame number, your count, the detection count, a
 
 Done when there is a short note: which arrows match, which are missing, which look wrong.
 
-### 5. Turn the map north-up
+### 4. Turn the map north-up
 
 The map keeps the 3D mesh axes, so north may not point up.
 
@@ -70,20 +62,20 @@ The map keeps the 3D mesh axes, so north may not point up.
 
 Done when we have the angle and the landmark list.
 
-### 6. Find more crowd data
+### 5. Find more crowd data
 
 We need footage of dense crowds, ideally on a campus, with camera calibration or people positions on the ground.
 
 Done when there is a table of five or more datasets with: link, license, whether redistribution is allowed, number of cameras, crowd density, and labels included.
 
-### 7. Prepare the demo story
+### 6. Prepare the demo story
 
 - Write the three-minute story: the problem, what the map shows, and what a planner could decide from it.
 - Pick the views to show and their order.
 
 Done when there is a draft slide outline.
 
-### 8. Run the other 21 SCOUT cameras
+### 7. Run the other 21 SCOUT cameras
 
 Camera 10 is done. The other 21 cameras of sequence 2 still need person detection, so the map can show heat and flow across the whole campus.
 
