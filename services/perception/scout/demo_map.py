@@ -60,6 +60,20 @@ def compose(base, grid, cam_meta, areas, heat, covered, highlight, field=None, m
     return img, vmax, flow_ref
 
 
+def frames_only(tracks, frames):
+    """Keep track points on the frames the heat layer used, so flow rates
+    divide by the same footage time."""
+    keep = {int(k) for k in frames}
+    out = {}
+    for cam, per in tracks.items():
+        out[cam] = {}
+        for tid, pts in per.items():
+            kept = [p for p in pts if int(p[0]) in keep]
+            if kept:
+                out[cam][tid] = kept
+    return out
+
+
 def legend(width, vmax, frames, seconds, people, highlight, n_cams, flow_ref=None):
     pad = np.full((150 if flow_ref is None else 172, width, 3), 255, np.uint8)
     t = lambda s, y, sc=.7, th=2: cv2.putText(pad, s, (16, y), cv2.FONT_HERSHEY_SIMPLEX, sc, (0, 0, 0), th, cv2.LINE_AA)  # noqa: E731
@@ -106,8 +120,8 @@ def main():
     base = cv2.imread(str(top / 'map.png'))
     field = None
     if a.tracks:
-        field = flow.flow_field(b, flow.load_tracks(a.tracks, a.highlight[0]), a.fps, a.cell_m, covered=covered,
-                                duration_s=len(pts) / a.fps)
+        field = flow.flow_field(b, frames_only(flow.load_tracks(a.tracks, a.highlight[0]), pts), a.fps, a.cell_m,
+                                covered=covered, duration_s=len(pts) / a.fps)
     img, vmax, flow_ref = compose(base, grid, meta, areas, heat, covered, a.highlight, field, a.min_count)
     people = float(np.mean([len(p) for p in pts.values()]))
     final = np.vstack([legend(img.shape[1], vmax, len(pts), len(pts) / a.fps, people, a.highlight, len(meta), flow_ref), img])

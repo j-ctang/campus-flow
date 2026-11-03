@@ -101,20 +101,29 @@ def segment(file_id, token, out):
     partial = out.with_suffix('.partial')
     final = None
     expired = threading.Event()
-    timer = None
+    held = {}
+
+    # The read timeout misses some hung connections (seen: no data for 18
+    # min), so a wall-clock deadline, started before connecting, closes the
+    # socket. Connecting and reading headers also use the deadline as their
+    # timeout, so a server that never answers is cut off in time too.
+    def stop():
+        expired.set()
+        r = held.get('r')
+        if r is None:
+            return
+        try:
+            r.fp.raw._sock.shutdown(socket.SHUT_RDWR)
+        except (AttributeError, OSError):
+            r.close()
+    timer = threading.Timer(DEADLINE_S, stop)
+    timer.daemon = True
+    timer.start()
     try:
-        with urllib.request.urlopen(req, timeout=STALL_S) as r, open(partial, 'wb') as f:
-            # The read timeout misses some hung connections (seen: no data for
-            # 18 min), so a wall-clock deadline closes the socket.
-            def stop():
-                expired.set()
-                try:
-                    r.fp.raw._sock.shutdown(socket.SHUT_RDWR)
-                except (AttributeError, OSError):
-                    r.close()
-            timer = threading.Timer(DEADLINE_S, stop)
-            timer.daemon = True
-            timer.start()
+        with urllib.request.urlopen(req, timeout=min(STALL_S, DEADLINE_S)) as r, open(partial, 'wb') as f:
+            held['r'] = r
+            if expired.is_set():
+                raise TimeoutError('deadline passed before the response started')
             for line in r:
                 f.write(line)
                 if line.startswith(b'data: '):
@@ -129,8 +138,7 @@ def segment(file_id, token, out):
         msg = f'no answer within {DEADLINE_S} s' if expired.is_set() else str(e)
         final = {'type': kind, 'error': {'message': msg}}
     finally:
-        if timer:
-            timer.cancel()
+        timer.cancel()
     if expired.is_set() and (final or {}).get('type') not in ('network_error',):
         status_now = (final or {}).get('response', {}).get('status')
         if status_now != 'completed':

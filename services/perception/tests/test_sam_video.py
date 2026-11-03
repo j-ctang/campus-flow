@@ -40,7 +40,35 @@ class HungStream(http.server.BaseHTTPRequestHandler):
         pass
 
 
+class NoHeaders(http.server.BaseHTTPRequestHandler):
+    def do_POST(self):
+        self.rfile.read(int(self.headers['Content-Length']))
+        time.sleep(5)  # never sends a status line
+
+    def log_message(self, *args):
+        pass
+
+
 class DeadlineTests(unittest.TestCase):
+    def run_against(self, handler):
+        srv = http.server.ThreadingHTTPServer(('127.0.0.1', 0), handler)
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+        old = sam_video.API, sam_video.DEADLINE_S, sam_video.STALL_S
+        sam_video.API, sam_video.DEADLINE_S, sam_video.STALL_S = f'http://127.0.0.1:{srv.server_address[1]}', 1, 30
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                start = time.time()
+                final = sam_video.segment('file-x', 'key', Path(tmp) / 'chunk.sse')
+                return final, time.time() - start
+        finally:
+            sam_video.API, sam_video.DEADLINE_S, sam_video.STALL_S = old
+            srv.shutdown()
+
+    def test_server_that_never_answers_is_cut_by_the_deadline(self):
+        final, took = self.run_against(NoHeaders)
+        self.assertLess(took, 4)
+        self.assertEqual(final['type'], 'network_error')
+
     def test_hung_stream_is_cut_and_counts_as_network_error(self):
         srv = http.server.ThreadingHTTPServer(('127.0.0.1', 0), HungStream)
         threading.Thread(target=srv.serve_forever, daemon=True).start()

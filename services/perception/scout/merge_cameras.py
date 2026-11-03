@@ -14,11 +14,12 @@ import sys
 from pathlib import Path
 
 
-def main():
-    out = Path(sys.argv[1])
+def merge(out, camera_dirs):
+    """Write the merged bundle.json, detections.json and tracks.json to out."""
+    out = Path(out)
     out.mkdir(parents=True, exist_ok=True)
     spec, detections, tracks = None, {}, {}
-    for d in map(Path, sys.argv[2:]):
+    for d in map(Path, camera_dirs):
         b = json.loads((d / 'bundle.json').read_text())
         cam = b['cameras'][0]
         for key in ('video',):
@@ -32,8 +33,11 @@ def main():
     (out / 'bundle.json').write_text(json.dumps(spec, indent=1))
     (out / 'detections.json').write_text(json.dumps(detections))
     (out / 'tracks.json').write_text(json.dumps(tracks))
-    print(json.dumps({'cameras': [c['id'] for c in spec['cameras']],
-                      'frames': {k: len(v) for k, v in detections.items()}}))
+    return {'cameras': [c['id'] for c in spec['cameras']], 'frames': {k: len(v) for k, v in detections.items()}}
+
+
+def main():
+    print(json.dumps(merge(sys.argv[1], sys.argv[2:])))
 
 
 if __name__ == '__main__':
