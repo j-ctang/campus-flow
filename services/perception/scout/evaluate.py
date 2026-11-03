@@ -31,11 +31,11 @@ import bundle as bundle_io  # noqa: E402
 import cameras as cams  # noqa: E402
 import flow  # noqa: E402
 import heatmap  # noqa: E402
+import transform  # noqa: E402
 
 FPS = 10.0
 SIGMA_M = 1.0
 CELL_M = 4.0
-MIN_COUNT = 8  # tracks a flow arrow needs, as in demo_map.py
 SAM_CAP = 16  # people SAM follows per request
 
 
@@ -73,16 +73,48 @@ def match(a, b, radius):
     return n
 
 
-def best_lag(ours, truth, frames, span=30):
-    """Frame offset that best lines up the two count series (expect 0)."""
-    a = np.array([len(ours[f]) for f in frames], float)
-    b = np.array([len(truth.get(f, ())) for f in frames], float)
-    if len(a) < 2:
-        return 0
-    a, b = a - a.mean(), b - b.mean()
-    span = min(span, len(a) - 1)
-    score = {k: float(np.dot(a[max(k, 0):len(a) + min(k, 0)], b[max(-k, 0):len(b) - max(k, 0)])) for k in range(-span, span + 1)}
-    return max(score, key=score.get)
+def frame_lag(bundle, tracks, truth, fps=FPS, near_m=1.5):
+    """Estimate lag using one truth identity per track. Rank candidates by
+    cross-track error and lag consistency, rather than nearest point per frame.
+    Ambiguous parallel trajectories are excluded; this remains a diagnostic,
+    not independent proof of synchronization or identity accuracy."""
+    m, lags = bundle['meters_per_pixel'], []
+    for cam in bundle['cameras']:
+        H = transform.fit(cam['frame_points'], cam['map_points'])
+        for t in tracks.get(cam['id'], {}).values():
+            t = np.asarray(sorted(t), float)
+            if len(t) < 5:
+                continue
+            p, f = transform.apply(H, flow.feet(t, fps)), t[:, 0].astype(int)
+            candidates = {}
+            for i in range(2, len(t) - 2):
+                v = (p[i + 2] - p[i - 2]) / 4
+                if f[i + 2] - f[i - 2] != 4 or not .8 <= np.hypot(*v) * m * fps <= 2.5 or f[i] not in truth:
+                    continue
+                speed = np.hypot(*v)
+                for pid, q in truth[f[i]].items():
+                    delta = q - p[i]
+                    if np.hypot(*delta) * m <= near_m:
+                        lag = float(delta @ v / (v @ v))
+                        cross = abs(float(delta[0] * v[1] - delta[1] * v[0])) / speed
+                        candidates.setdefault(pid, []).append((lag, cross))
+            if not candidates:
+                continue
+            # Require sustained support, so a single crossing cannot win.
+            support = max(map(len, candidates.values()))
+            ranked = []
+            for samples in candidates.values():
+                if len(samples) < max(3, support * .5):
+                    continue
+                values = np.asarray(samples)
+                center = np.median(values[:, 0])
+                score = float(np.median(values[:, 1]) * m +
+                              np.median(abs(values[:, 0] - center)) * .1)
+                ranked.append((score, values[:, 0]))
+            ranked.sort(key=lambda item: item[0])
+            if ranked and (len(ranked) == 1 or ranked[1][0] - ranked[0][0] > .05):
+                lags.extend(ranked[0][1])
+    return float(np.median(lags)) if lags else None
 
 
 def truth_paths(truth, covered, m, min_s=1.5, min_move_m=1.0):
@@ -197,7 +229,6 @@ def main():
     truth = {f: np.array(list(p.values())) for f, p in raw.items()}
     truth = {f: p[inside(p, covered)] for f, p in truth.items()}
     frames = sorted(set(ours) & set(truth))
-    lag = best_lag(ours, truth, frames)
 
     n_o = np.array([len(ours[f]) for f in frames])
     n_t = np.array([len(truth[f]) for f in frames])
@@ -229,11 +260,11 @@ def main():
     r_o, r_t = f_o['rate'], f_t['rate']
     seen = f_o['covered_frac'] >= .5
     both = seen[..., None].repeat(r_o.shape[2], 2)
-    a_o, a_t = flow.arrows(f_o, MIN_COUNT), flow.arrows(f_t, MIN_COUNT)
+    a_o, a_t = flow.arrows(f_o), flow.arrows(f_t)  # each threshold scales with its own crowd
 
     report = {
         'cameras': ids, 'frames': len(frames), 'minutes': minutes, 'covered_m2': float(covered.sum() * m * m),
-        'best_frame_lag': lag,
+        'frame_lag': frame_lag(b, flow.load_tracks(run / 'tracks.json', ids[0]), raw),
         'counts': {'truth_per_frame': float(n_t.mean()), 'ours_per_frame': float(n_o.mean()),
                    'ours_over_truth': float(n_o.sum() / n_t.sum()), 'count_correlation': float(np.corrcoef(n_o, n_t)[0, 1]),
                    'truth_peak': int(n_t.max()), 'ours_peak': int(n_o.max())},
@@ -241,7 +272,7 @@ def main():
                  'hot_area_iou_top10pct': float(((top10(h_o) & top10(h_t)) & covered).sum() / ((top10(h_o) | top10(h_t)) & covered).sum()),
                  'recall_1m': hits[1] / n_t.sum(), 'recall_2m': hits[2] / n_t.sum(),
                  'precision_1m': hits[1] / max(n_o.sum(), 1), 'precision_2m': hits[2] / max(n_o.sum(), 1)},
-        'flow': {'cell_m': CELL_M, 'min_count': MIN_COUNT, 'truth_tracks': f_t['tracks_kept'], 'our_tracks': f_o['tracks_kept'],
+        'flow': {'cell_m': CELL_M, 'min_count_ours': flow.auto_min_count(f_o), 'min_count_truth': flow.auto_min_count(f_t), 'truth_tracks': f_t['tracks_kept'], 'our_tracks': f_o['tracks_kept'],
                  'rate_correlation_cells_x_directions': float(np.corrcoef(r_o[both], r_t[both])[0, 1]),
                  'total_rate_ours_over_truth': float(r_o[both].sum() / r_t[both].sum()),
                  'arrows': compare_arrows(a_o, a_t, f_t, m)},
