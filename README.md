@@ -32,12 +32,15 @@ Both datasets come with official answer keys. We score the pipeline against them
 | People placed within 2 m of a real person | 72% | 25% |
 | Our points within 2 m of a real person | 64% | 65% |
 | Flow: rate correlation per cell and direction | no tracks in the labels | 0.81 |
-| Flow: answer-key arrows we also show | no tracks in the labels | 90% |
-| Flow: our arrows that match an answer-key arrow | no tracks in the labels | 60% |
+| Flow: answer-key arrows with one of ours within 6 m, same direction | no tracks in the labels | 100% |
+| Flow: our arrows with an answer-key arrow within 6 m, same direction | no tracks in the labels | 79% (median angle 2°) |
+| Flow: our other arrows that still sit on real, weaker flow | no tracks in the labels | 19% |
+| Flow: our arrows that are wrong (opposite, or no flow there) | no tracks in the labels | 2% |
+| Flow: arrow size, ours vs answer key | no tracks in the labels | 0.38 times, rank correlation 0.30 |
 
 - **CityStreet** checks where people are. Its labels have no person IDs, so they cannot score flow.
-- **SCOUT** checks flow too: its annotations follow each person over time. The heat map and the main walking streams match well.
-- **SCOUT finds only 39% of the people.** Many are tiny in the low-resolution previews, about half under 20 pixels tall on some cameras, and SAM follows at most 16 people per request. Full-resolution video and crops would fix both. CityStreet, run at full resolution with tiles, does not undercount.
+- **SCOUT** checks flow too: its annotations follow each person over time. Arrows sit on a 4 m grid, so a stream can land one cell over. An arrow counts as right if the answer key has one within 6 m pointing within 45°. Placement and direction match well. Sizes are about a third of the real rate, because we find fewer people, and their order matches only loosely.
+- **SCOUT finds only 39% of the people.** Many are tiny in the low-resolution previews, about half under 20 pixels tall on some cameras, and the hosted SAM 3.1 video mode tracks at most 16 objects per frame ([limits](https://dev.meta.ai/docs/sam/segmenting)). Image requests have no such cap. Full-resolution video and crops would fix both. CityStreet, run at full resolution with tiles, does not undercount.
 - `services/perception/scout/evaluate.py` scores a SCOUT run. `services/perception/citystreet/proof.py` scores CityStreet.
 
 ## Data credits
