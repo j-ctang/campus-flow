@@ -1,4 +1,5 @@
 import json
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -12,6 +13,7 @@ sys.path.insert(0, str(ROOT / 'scout'))
 sys.path.insert(0, str(ROOT / 'flowmap'))
 import bundle as bundle_io
 import demo_map
+import flow
 import heatmap
 import merge_cameras
 
@@ -63,6 +65,26 @@ class MergeTests(unittest.TestCase):
         result = heatmap.run(b, json.loads((self.out / 'detections.json').read_text()), sigma_m=0.5)
         self.assertEqual(len(result['points']['0']), 2)  # one person per camera, separate ground
         self.assertEqual(len(result['points']['1']), 1)
+
+
+    def test_flow_counts_walkers_from_each_camera(self):
+        b = bundle_io.load(self.out / 'bundle.json')
+        walk = lambda: [[f, 10 + 4 * f, 50] for f in range(25)]  # noqa: E731  # 80 px in 2.5 s, 8 m
+        tracks = {'cam_a': {str(i): walk() for i in range(3)}, 'cam_b': {str(i): walk() for i in range(4)}}
+        per_cam = {}
+        for cid in ('cam_a', 'cam_b'):
+            field = flow.flow_field(b, {cid: tracks[cid]}, fps=10, cell_m=4.0, duration_s=60)
+            per_cam[cid] = flow.summary(field, min_count=1)['tracks_kept']
+        both = flow.summary(flow.flow_field(b, tracks, fps=10, cell_m=4.0, duration_s=60), min_count=1)['tracks_kept']
+        self.assertEqual(per_cam, {'cam_a': 3, 'cam_b': 4})
+        self.assertEqual(both, 7)
+
+    def test_command_line(self):
+        out = Path(self.tmp.name) / 'cli'
+        res = subprocess.run([sys.executable, str(ROOT / 'scout' / 'merge_cameras.py'), str(out), str(self.a), str(self.b)],
+                             capture_output=True, text=True, check=True)
+        self.assertEqual(json.loads(res.stdout)['cameras'], ['cam_a', 'cam_b'])
+        self.assertTrue((out / 'tracks.json').exists())
 
 
 class FlowFramesTests(unittest.TestCase):

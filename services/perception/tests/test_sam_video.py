@@ -49,6 +49,24 @@ class NoHeaders(http.server.BaseHTTPRequestHandler):
         pass
 
 
+class Trickle(http.server.BaseHTTPRequestHandler):
+    def do_POST(self):
+        self.rfile.read(int(self.headers['Content-Length']))
+        self.send_response(200)
+        self.send_header('Content-Type', 'text/event-stream')
+        self.end_headers()
+        try:
+            for _ in range(20):  # a keep-alive line every 0.2 s: each read is fast, the request never ends
+                self.wfile.write(b': ping\n')
+                self.wfile.flush()
+                time.sleep(.2)
+        except (BrokenPipeError, ConnectionResetError):
+            pass  # the client cut the request, as it should
+
+    def log_message(self, *args):
+        pass
+
+
 class DeadlineTests(unittest.TestCase):
     def run_against(self, handler):
         srv = http.server.ThreadingHTTPServer(('127.0.0.1', 0), handler)
@@ -63,6 +81,11 @@ class DeadlineTests(unittest.TestCase):
         finally:
             sam_video.API, sam_video.DEADLINE_S, sam_video.STALL_S = old
             srv.shutdown()
+
+    def test_stream_that_never_ends_is_cut_by_the_deadline(self):
+        final, took = self.run_against(Trickle)
+        self.assertLess(took, 2)
+        self.assertEqual(final['type'], 'network_error')
 
     def test_server_that_never_answers_is_cut_by_the_deadline(self):
         final, took = self.run_against(NoHeaders)

@@ -91,39 +91,11 @@ def upload(path, token):
     return info['id']
 
 
-def segment(file_id, token, out):
-    """One streamed request. Returns the final stream event (or None)."""
-    body = {'model': 'sam-3.1', 'stream': True, 'metadata': {'mask_encoding': 'one_bit'},
-            'input': [{'type': 'message', 'role': 'user', 'content': [
-                {'type': 'input_text', 'text': 'person'}, {'type': 'input_video', 'file_id': file_id}]}]}
-    req = urllib.request.Request(f'{API}/responses', json.dumps(body).encode(),
-                                 {'Authorization': f'Bearer {token}', 'Content-Type': 'application/json'})
-    partial = out.with_suffix('.partial')
-    final = None
-    expired = threading.Event()
-    held = {}
-
-    # The read timeout misses some hung connections (seen: no data for 18
-    # min), so a wall-clock deadline, started before connecting, closes the
-    # socket. Connecting and reading headers also use the deadline as their
-    # timeout, so a server that never answers is cut off in time too.
-    def stop():
-        expired.set()
-        r = held.get('r')
-        if r is None:
-            return
-        try:
-            r.fp.raw._sock.shutdown(socket.SHUT_RDWR)
-        except (AttributeError, OSError):
-            r.close()
-    timer = threading.Timer(DEADLINE_S, stop)
-    timer.daemon = True
-    timer.start()
+def _stream(req, partial, held, result):
+    """Worker: send the request and copy the stream to partial."""
     try:
-        with urllib.request.urlopen(req, timeout=min(STALL_S, DEADLINE_S)) as r, open(partial, 'wb') as f:
+        with urllib.request.urlopen(req, timeout=STALL_S) as r, open(partial, 'wb') as f:
             held['r'] = r
-            if expired.is_set():
-                raise TimeoutError('deadline passed before the response started')
             for line in r:
                 f.write(line)
                 if line.startswith(b'data: '):
@@ -132,19 +104,43 @@ def segment(file_id, token, out):
                     except ValueError:
                         continue
                     if ev.get('type') in ('response.completed', 'response.failed', 'response.incomplete', 'error'):
-                        final = ev
+                        result['final'] = ev
     except Exception as e:
-        kind = 'network_error' if expired.is_set() or is_network_error(e) else 'client_error'
-        msg = f'no answer within {DEADLINE_S} s' if expired.is_set() else str(e)
-        final = {'type': kind, 'error': {'message': msg}}
-    finally:
-        timer.cancel()
-    if expired.is_set() and (final or {}).get('type') not in ('network_error',):
-        status_now = (final or {}).get('response', {}).get('status')
-        if status_now != 'completed':
-            final = {'type': 'network_error', 'error': {'message': f'no answer within {DEADLINE_S} s'}}
-    status = (final or {}).get('response', {}).get('status')
-    if status == 'completed':
+        result['error'] = e
+
+
+def segment(file_id, token, out):
+    """One streamed request. Returns the final stream event (or None).
+
+    The whole request (connect, headers, stream) runs in a worker thread
+    with one wall-clock deadline. The read timeout alone misses some hung
+    connections (seen: no data for 18 min). At the deadline the socket is
+    shut down and the request counts as a network error. Each attempt writes
+    its own partial file, so an abandoned worker cannot touch the next try.
+    """
+    body = {'model': 'sam-3.1', 'stream': True, 'metadata': {'mask_encoding': 'one_bit'},
+            'input': [{'type': 'message', 'role': 'user', 'content': [
+                {'type': 'input_text', 'text': 'person'}, {'type': 'input_video', 'file_id': file_id}]}]}
+    req = urllib.request.Request(f'{API}/responses', json.dumps(body).encode(),
+                                 {'Authorization': f'Bearer {token}', 'Content-Type': 'application/json'})
+    partial = out.with_name(f'{out.stem}.{uuid.uuid4().hex[:8]}.partial')
+    held, result = {}, {}
+    worker = threading.Thread(target=_stream, args=(req, partial, held, result), daemon=True)
+    worker.start()
+    worker.join(DEADLINE_S)
+    if worker.is_alive():
+        r = held.get('r')
+        if r is not None:
+            try:
+                r.fp.raw._sock.shutdown(socket.SHUT_RDWR)
+            except (AttributeError, OSError):
+                pass
+        return {'type': 'network_error', 'error': {'message': f'no answer within {DEADLINE_S} s'}}
+    if 'error' in result:
+        e = result['error']
+        return {'type': 'network_error' if is_network_error(e) else 'client_error', 'error': {'message': str(e)}}
+    final = result.get('final')
+    if (final or {}).get('response', {}).get('status') == 'completed':
         partial.replace(out)
     return final
 
