@@ -60,6 +60,22 @@ class EvaluateTests(unittest.TestCase):
         self.assertAlmostEqual(self._lag_case(0), 0.0)
         self.assertAlmostEqual(self._lag_case(3), 3.0)
 
+    def test_frame_lag_with_side_by_side_walker(self):
+        corners = [[0, 0], [400, 0], [400, 400], [0, 400]]
+        b = {'meters_per_pixel': .1, 'cameras': [{'id': 'a', 'frame_points': corners, 'map_points': corners}]}
+        tracks = {'a': {'1': [[f, 20 + 1.2 * (f - 4), 200] for f in range(4, 200)]}}
+        truth = {f: {7: np.array([20 + 1.2 * f, 200.]),
+                     8: np.array([20 + 1.2 * (f - 4), 204.])} for f in range(200)}
+        self.assertAlmostEqual(evaluate.frame_lag(b, tracks, truth), 4.)
+
+    def test_frame_lag_excludes_ambiguous_parallel_walkers(self):
+        corners = [[0, 0], [400, 0], [400, 400], [0, 400]]
+        b = {'meters_per_pixel': .1, 'cameras': [{'id': 'a', 'frame_points': corners, 'map_points': corners}]}
+        tracks = {'a': {'1': [[f, 20 + 1.2 * f, 200] for f in range(200)]}}
+        truth = {f: {7: np.array([20 + 1.2 * f, 200.]),
+                     8: np.array([24.8 + 1.2 * f, 200.])} for f in range(200)}
+        self.assertIsNone(evaluate.frame_lag(b, tracks, truth))
+
     def test_frame_lag_without_matches(self):
         corners = [[0, 0], [1, 0], [1, 1], [0, 1]]
         b = {'meters_per_pixel': 0.1, 'cameras': [{'id': 'a', 'frame_points': corners, 'map_points': corners}]}

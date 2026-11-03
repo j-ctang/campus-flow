@@ -101,6 +101,17 @@ class FlowTests(unittest.TestCase):
         self.assertNotIn(110, rows)  # 10 walkers vanish next to 100 ...
         self.assertTrue(flow.arrows(field({f'm{i}': walk([40, 100], [1.2, 0], 20) for i in range(10)})))  # ... not alone
 
+    def test_draw_flow_default_uses_crowd_threshold(self):
+        dense = field({**{str(i): walk([40, 200], [1.2, 0], 20) for i in range(100)},
+                       **{f'm{i}': walk([40, 100], [1.2, 0], 20) for i in range(16)}})
+        img = np.zeros((400, 400, 3), np.uint8)
+        expected, fixed = img.copy(), img.copy()
+        flow.draw_flow(img, dense)
+        flow.draw_flow(expected, dense, min_count=flow.auto_min_count(dense))
+        flow.draw_flow(fixed, dense, min_count=3)
+        self.assertTrue(np.array_equal(img, expected))
+        self.assertFalse(np.array_equal(img, fixed))
+
     def test_draw_flow_marks_image(self):
         f = field({str(i): walk([40, 200], [1.2, 0], 10) for i in range(4)})
         img = np.zeros((400, 400, 3), np.uint8)

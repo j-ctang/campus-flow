@@ -74,12 +74,10 @@ def match(a, b, radius):
 
 
 def frame_lag(bundle, tracks, truth, fps=FPS, near_m=1.5):
-    """Frames our walkers trail the answer key (expect about 0). For each of
-    our moving track points, the nearest annotated person in the same frame
-    is ahead or behind along the walking direction; the median of that offset,
-    divided by the step per frame, is the lag. Moving people make this exact
-    to a fraction of a frame; comparing per-frame counts is not (counts move
-    slowly and the undercount is uneven)."""
+    """Estimate lag using one truth identity per track. Rank candidates by
+    cross-track error and lag consistency, rather than nearest point per frame.
+    Ambiguous parallel trajectories are excluded; this remains a diagnostic,
+    not independent proof of synchronization or identity accuracy."""
     m, lags = bundle['meters_per_pixel'], []
     for cam in bundle['cameras']:
         H = transform.fit(cam['frame_points'], cam['map_points'])
@@ -88,14 +86,34 @@ def frame_lag(bundle, tracks, truth, fps=FPS, near_m=1.5):
             if len(t) < 5:
                 continue
             p, f = transform.apply(H, flow.feet(t, fps)), t[:, 0].astype(int)
+            candidates = {}
             for i in range(2, len(t) - 2):
                 v = (p[i + 2] - p[i - 2]) / 4
                 if f[i + 2] - f[i - 2] != 4 or not .8 <= np.hypot(*v) * m * fps <= 2.5 or f[i] not in truth:
                     continue
-                q = np.array(list(truth[f[i]].values()))
-                d = np.hypot(*(q - p[i]).T)
-                if d.min() * m <= near_m:
-                    lags.append(float((q[d.argmin()] - p[i]) @ v / (v @ v)))
+                speed = np.hypot(*v)
+                for pid, q in truth[f[i]].items():
+                    delta = q - p[i]
+                    if np.hypot(*delta) * m <= near_m:
+                        lag = float(delta @ v / (v @ v))
+                        cross = abs(float(delta[0] * v[1] - delta[1] * v[0])) / speed
+                        candidates.setdefault(pid, []).append((lag, cross))
+            if not candidates:
+                continue
+            # Require sustained support, so a single crossing cannot win.
+            support = max(map(len, candidates.values()))
+            ranked = []
+            for samples in candidates.values():
+                if len(samples) < max(3, support * .5):
+                    continue
+                values = np.asarray(samples)
+                center = np.median(values[:, 0])
+                score = float(np.median(values[:, 1]) * m +
+                              np.median(abs(values[:, 0] - center)) * .1)
+                ranked.append((score, values[:, 0]))
+            ranked.sort(key=lambda item: item[0])
+            if ranked and (len(ranked) == 1 or ranked[1][0] - ranked[0][0] > .05):
+                lags.extend(ranked[0][1])
     return float(np.median(lags)) if lags else None
 
 
