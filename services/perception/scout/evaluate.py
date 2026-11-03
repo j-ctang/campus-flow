@@ -77,7 +77,10 @@ def best_lag(ours, truth, frames, span=30):
     """Frame offset that best lines up the two count series (expect 0)."""
     a = np.array([len(ours[f]) for f in frames], float)
     b = np.array([len(truth.get(f, ())) for f in frames], float)
+    if len(a) < 2:
+        return 0
     a, b = a - a.mean(), b - b.mean()
+    span = min(span, len(a) - 1)
     score = {k: float(np.dot(a[max(k, 0):len(a) + min(k, 0)], b[max(-k, 0):len(b) - max(k, 0)])) for k in range(-span, span + 1)}
     return max(score, key=score.get)
 
@@ -222,7 +225,7 @@ def main():
     f_o = flow.flow_field(b, {c: {k: [p for p in t if int(p[0]) in keep] for k, t in v.items()}
                               for c, v in flow.load_tracks(run / 'tracks.json', ids[0]).items()},
                           FPS, CELL_M, covered=covered, duration_s=minutes * 60)
-    f_t = flow.field_from_paths(truth_paths(raw, covered, m), shape, covered, m, minutes * 60, CELL_M)
+    f_t = flow.field_from_paths(truth_paths({f: p for f, p in raw.items() if f in keep}, covered, m), shape, covered, m, minutes * 60, CELL_M)
     r_o, r_t = f_o['rate'], f_t['rate']
     seen = f_o['covered_frac'] >= .5
     both = seen[..., None].repeat(r_o.shape[2], 2)

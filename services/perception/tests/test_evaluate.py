@@ -54,6 +54,19 @@ class EvaluateTests(unittest.TestCase):
         ours = {f: np.zeros((base[f - 3] if f >= 3 else 0, 2)) for f in range(300)}
         self.assertEqual(evaluate.best_lag(ours, truth, list(range(300))), 3)
 
+    def test_best_lag_short_runs(self):
+        truth = {f: np.zeros((f % 3, 2)) for f in range(5)}
+        self.assertEqual(evaluate.best_lag(truth, truth, list(range(5))), 0)
+        self.assertEqual(evaluate.best_lag({}, {}, []), 0)
+
+    def test_truth_paths_only_use_given_frames(self):
+        raw = {f: {1: np.array([10.0 + f, 10.0])} for f in range(40)}
+        covered = np.ones((50, 60), bool)
+        full = evaluate.truth_paths(raw, covered, m=0.1)
+        half = evaluate.truth_paths({f: p for f, p in raw.items() if f < 20}, covered, m=0.1)
+        self.assertEqual(len(full[0]), 40)
+        self.assertEqual(len(half[0]), 20)
+
 
 if __name__ == '__main__':
     unittest.main()
