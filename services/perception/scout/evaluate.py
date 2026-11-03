@@ -105,28 +105,53 @@ def truth_paths(truth, covered, m, min_s=1.5, min_move_m=1.0):
     return out
 
 
-def compare_arrows(ours, truth, cell_px, max_angle=45):
-    """An arrow matches if the other side has one in the same cell within max_angle."""
-    def key(a):
-        return tuple((a[0] // cell_px).astype(int))
-    cos = np.cos(np.radians(max_angle))
+def compare_arrows(ours, truth, truth_field, m, near_m=6.0, max_angle=45):
+    """Judge arrows by placement, direction and size, not exact cell matches.
 
-    def hits(src, dst):
-        by_cell = {}
-        for a in dst:
-            by_cell.setdefault(key(a), []).append(a)
-        found = []
-        for a in src:
-            best = max(by_cell.get(key(a), []), key=lambda b: float(a[1] @ b[1]), default=None)
-            if best is not None and float(a[1] @ best[1]) >= cos:
-                found.append((a[2], best[2]))
-        return found
-    t_hits, o_hits = hits(truth, ours), hits(ours, truth)
-    rates = np.array(t_hits) if t_hits else np.zeros((0, 2))
-    return {'truth_arrows': len(truth), 'our_arrows': len(ours),
-            'recall': len(t_hits) / max(len(truth), 1), 'precision': len(o_hits) / max(len(ours), 1),
-            'matched_rate_correlation': float(np.corrcoef(rates[:, 0], rates[:, 1])[0, 1]) if len(rates) > 2 else None,
-            'matched_rate_ratio_ours_over_truth': float(rates[:, 1].sum() / rates[:, 0].sum()) if len(rates) else None}
+    Arrows sit on a coarse grid, so a stream can land one cell over. An arrow
+    agrees if the other side has one within near_m pointing within max_angle.
+    Our arrows with no such partner are split into weaker real flow (the
+    answer key has flow there in that direction, just below the arrow
+    threshold), opposite or sideways flow, and flow where the answer key has none.
+    """
+    cos, near = np.cos(np.radians(max_angle)), near_m / m
+
+    def partner(a, others):
+        best = None
+        for c, d, r in others:
+            if np.hypot(*(c - a[0])) <= near and float(a[1] @ d) >= cos and (best is None or float(a[1] @ d) > float(a[1] @ best[1])):
+                best = (c, d, r)
+        return best
+    cell, bins, rate = truth_field['cell_px'], truth_field['bins'], truth_field['rate']
+    kinds, pairs, angles = {'agrees': 0, 'weaker_real_flow': 0, 'opposite': 0, 'sideways': 0, 'no_flow_in_answer_key': 0}, [], []
+    for a in ours:
+        p = partner(a, truth)
+        if p is not None:
+            kinds['agrees'] += 1
+            pairs.append((p[2], a[2]))
+            angles.append(float(np.degrees(np.arccos(np.clip(a[1] @ p[1], -1, 1)))))
+            continue
+        i, j = (a[0] // cell).astype(int)
+        b = int(np.round(np.arctan2(a[1][1], a[1][0]) / (2 * np.pi / bins))) % bins
+        same = rate[j, i, [(b - 1) % bins, b, (b + 1) % bins]].sum()
+        if same >= .5 * a[2]:
+            kinds['weaker_real_flow'] += 1
+            continue
+        near_t = [t for t in truth if np.hypot(*(t[0] - a[0])) <= near]
+        if not near_t:
+            kinds['no_flow_in_answer_key'] += 1
+        elif max(float(a[1] @ t[1]) for t in near_t) <= -cos:
+            kinds['opposite'] += 1
+        else:
+            kinds['sideways'] += 1
+    pairs = np.array(pairs) if pairs else np.zeros((0, 2))
+    rank = (lambda x: np.argsort(np.argsort(x)))  # noqa: E731
+    return {'near_m': near_m, 'max_angle_deg': max_angle, 'truth_arrows': len(truth), 'our_arrows': len(ours),
+            'truth_arrows_with_our_arrow_nearby': sum(partner(t, ours) is not None for t in truth) / max(len(truth), 1),
+            'our_arrows_by_kind': kinds,
+            'angle_to_partner_deg_median': float(np.median(angles)) if angles else None,
+            'rate_ours_over_truth_median': float(np.median(pairs[:, 1] / pairs[:, 0])) if len(pairs) else None,
+            'rate_rank_correlation': float(np.corrcoef(rank(pairs[:, 0]), rank(pairs[:, 1]))[0, 1]) if len(pairs) > 2 else None}
 
 
 def draw(base, covered, ours, truth, path):
@@ -216,7 +241,7 @@ def main():
         'flow': {'cell_m': CELL_M, 'min_count': MIN_COUNT, 'truth_tracks': f_t['tracks_kept'], 'our_tracks': f_o['tracks_kept'],
                  'rate_correlation_cells_x_directions': float(np.corrcoef(r_o[both], r_t[both])[0, 1]),
                  'total_rate_ours_over_truth': float(r_o[both].sum() / r_t[both].sum()),
-                 'arrows': compare_arrows(a_o, a_t, f_o['cell_px'])},
+                 'arrows': compare_arrows(a_o, a_t, f_t, m)},
         'per_camera': per_cam,
     }
     Path(a.out).write_text(json.dumps(report, indent=2))
