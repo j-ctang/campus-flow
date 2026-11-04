@@ -1,6 +1,6 @@
 # How the app works
 
-This page fixes what goes into Campus Flow, what comes out, and how long it takes. Build the viewer against it. The numbers come from real runs on 8 SCOUT cameras and on CityStreet.
+This page fixes what goes into CrowdMap, what comes out, and how long it takes. Build the viewer against it. The numbers come from real runs on 8 SCOUT cameras and on CityStreet.
 
 ## In one line
 

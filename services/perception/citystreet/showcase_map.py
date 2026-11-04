@@ -1,4 +1,4 @@
-"""Showcase figure for the README: the kind of map Campus Flow produces.
+"""Showcase figure for the README: the kind of map CrowdMap produces.
 
 CityStreet only, because SCOUT terms forbid sharing SCOUT images. The base map
 is Hong Kong Lands Department aerial imagery from web map tiles, so north is
@@ -83,7 +83,7 @@ def main():
 
     w = img.shape[1]
     top = np.full((92, w, 3), 255, np.uint8)
-    cv2.putText(top, 'What Campus Flow makes: a crowd heat map on a top-down map', (12, 28), FONT, .75, BLACK, 2, cv2.LINE_AA)
+    cv2.putText(top, 'What CrowdMap makes: a crowd heat map on a top-down map', (12, 28), FONT, .75, BLACK, 2, cv2.LINE_AA)
     top[44:56, 12:212] = cv2.applyColorMap(np.uint8(np.linspace(0, 255, 200))[None, :].repeat(12, 0), cv2.COLORMAP_JET)
     cv2.putText(top, f'0 .. {vmax:.2f} people per m2, mean of {len(res["frames"])} frames, 3 cameras.',
                 (222, 55), FONT, .5, BLACK, 1, cv2.LINE_AA)

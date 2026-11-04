@@ -1,10 +1,10 @@
-# Campus Flow
+# CrowdMap
 
-Campus Flow maps how people walk through a place, using ordinary camera footage. It turns video into crowd heat maps and flow arrows on a top-down map, to help plan transit and crowd safety. We build and test it on EPFL’s SCOUT campus data. SCOUT images stay private, so public figures and demos use the CityStreet dataset.
+CrowdMap maps how people walk through a place, using ordinary camera footage. It turns video into crowd heat maps and flow arrows on a top-down map, to help plan transit and crowd safety. We build and test it on EPFL’s SCOUT campus data. SCOUT images stay private, so public figures and demos use the CityStreet dataset.
 
 ![Crowd heat map from our pipeline on a north-up aerial map of the CityStreet junction, with each camera and the ground it sees](docs/images/citystreet-map.jpg)
 
-This is what Campus Flow makes: where people concentrate, on a top-down map, from three ordinary cameras. It shows CityStreet in Hong Kong. `services/perception/citystreet/showcase_map.py` rebuilds it.
+This is what CrowdMap makes: where people concentrate, on a top-down map, from three ordinary cameras. It shows CityStreet in Hong Kong. `services/perception/citystreet/showcase_map.py` rebuilds it.
 
 ## How it works
 
@@ -45,7 +45,7 @@ Both datasets come with official answer keys. We score the pipeline against them
 
 ## Data credits
 
-Campus Flow uses the [SCOUT dataset](https://scout.epfl.ch/) from EPFL’s Computer Vision Laboratory (CVLAB), including video, camera calibration, and scene geometry.
+CrowdMap uses the [SCOUT dataset](https://scout.epfl.ch/) from EPFL’s Computer Vision Laboratory (CVLAB), including video, camera calibration, and scene geometry.
 
 Dataset reference: Martin Engilberge, Ivan Vrkic, Friedrich Wilke Grosche, Julien Pilet, Engin Turetken, and Pascal Fua. *[One Graph to Track Them All: Dynamic GNNs for Single- and Multi-View Tracking](https://arxiv.org/abs/2507.08494)* (2025).
 
