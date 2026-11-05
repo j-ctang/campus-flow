@@ -61,9 +61,9 @@ To download CityStreet from its official source into the ignored `data/citystree
 
 The flow map pipeline takes a top-down map, the camera footage, and four or more hand-marked ground points per camera. It outputs a crowd heat map on that map. The input format is version 0.1 and may change. See [`services/perception/flowmap/README.md`](services/perception/flowmap/README.md).
 
-## Temporary pipeline
+## Pipeline
 
-This is the current working pipeline. It will change.
+This is the current working pipeline.
 
 ```mermaid
 flowchart LR
